@@ -86,6 +86,18 @@ async function compileAndLogInk(inkFilePath) {
   // Add to recent files if compilation succeeded
   if (result.success) {
     addRecentFile(inkFilePath);
+  } else {
+    // Show error dialog on compilation failure
+    const fileName = path.basename(inkFilePath);
+    const errorMessage = result.errors.join('\n\n');
+
+    await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Ink Compilation Failed',
+      message: `Failed to compile ${fileName}`,
+      detail: errorMessage,
+      buttons: ['OK']
+    });
   }
 
   return result;
@@ -108,6 +120,36 @@ async function loadInkFile() {
   }
 }
 
+// Format an error object to a readable string
+function formatError(error) {
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  // Handle error objects with various properties
+  if (error && typeof error === 'object') {
+    let parts = [];
+
+    // Add line number if available
+    if (error.lineNumber !== undefined) {
+      parts.push(`Line ${error.lineNumber}`);
+    }
+
+    // Add error type if available
+    if (error.type) {
+      parts.push(`[${error.type}]`);
+    }
+
+    // Add the message
+    const message = error.message || error.text || String(error);
+    parts.push(message);
+
+    return parts.join(' ');
+  }
+
+  return String(error);
+}
+
 // Core Ink compilation function
 async function compileInk(inkFilePath) {
   try {
@@ -120,7 +162,19 @@ async function compileInk(inkFilePath) {
     // Create compiler with file handler
     const inkDir = path.dirname(inkFilePath);
     const fileHandler = new BomStrippingFileHandler(inkDir);
-    const errorHandler = (message, type) => {};
+
+    // Collect errors and warnings from error handler
+    const collectedErrors = [];
+    const collectedWarnings = [];
+
+    const errorHandler = (message, type) => {
+      const formattedMessage = formatError(message);
+      if (type === 'WARNING' || type === 'warning') {
+        collectedWarnings.push(formattedMessage);
+      } else {
+        collectedErrors.push(formattedMessage);
+      }
+    };
 
     const compiler = new Compiler(inkContent, {
       sourceFilename: inkFilePath,
@@ -128,22 +182,53 @@ async function compileInk(inkFilePath) {
       errorHandler: errorHandler
     });
 
-    // Compile
-    const story = compiler.Compile();
+    // Compile - this may call errorHandler multiple times
+    let story = null;
+    try {
+      story = compiler.Compile();
+    } catch (compileError) {
+      // Compilation threw an error, but errorHandler should have collected the details
+    }
+
+    // Collect all errors and warnings
+    const allErrors = [...collectedErrors];
+    const allWarnings = [...collectedWarnings];
+
+    // Also check compiler.errors and compiler.warnings arrays
+    if (compiler.errors && compiler.errors.length > 0) {
+      compiler.errors.forEach(error => {
+        allErrors.push(formatError(error));
+      });
+    }
+
+    if (compiler.warnings && compiler.warnings.length > 0) {
+      compiler.warnings.forEach(warning => {
+        allWarnings.push(formatError(warning));
+      });
+    }
 
     // Check for errors
-    if (compiler.errors.length > 0) {
+    if (allErrors.length > 0) {
       return {
         success: false,
-        errors: compiler.errors,
-        warnings: compiler.warnings
+        errors: allErrors,
+        warnings: allWarnings
+      };
+    }
+
+    // Check if story was successfully created
+    if (!story) {
+      return {
+        success: false,
+        errors: ['Compilation failed - no story object created'],
+        warnings: allWarnings
       };
     }
 
     // Return success with story info
     return {
       success: true,
-      warnings: compiler.warnings,
+      warnings: allWarnings,
       storyInfo: {
         canContinue: story.canContinue,
         choiceCount: story.currentChoices.length,
@@ -155,7 +240,7 @@ async function compileInk(inkFilePath) {
   } catch (error) {
     return {
       success: false,
-      errors: [error.message],
+      errors: [formatError(error)],
       warnings: []
     };
   }
