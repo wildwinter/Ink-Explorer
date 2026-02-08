@@ -11,25 +11,27 @@ import path from 'path';
  * This is necessary because some editors add BOM to UTF-8 files which can cause issues
  */
 export class BomStrippingFileHandler {
-  constructor(rootPath) {
+  private rootPath: string;
+
+  constructor(rootPath: string) {
     this.rootPath = rootPath;
   }
 
   /**
    * Resolves an include filename relative to the root path
-   * @param {string} includeName - The filename to include
-   * @returns {string} The absolute path to the file
+   * @param includeName - The filename to include
+   * @returns The absolute path to the file
    */
-  ResolveInkFilename(includeName) {
+  ResolveInkFilename(includeName: string): string {
     return path.resolve(this.rootPath, includeName);
   }
 
   /**
    * Loads the contents of an Ink file and strips BOM if present
-   * @param {string} fullFilename - The full path to the file
-   * @returns {string} The file contents with BOM removed
+   * @param fullFilename - The full path to the file
+   * @returns The file contents with BOM removed
    */
-  LoadInkFileContents(fullFilename) {
+  LoadInkFileContents(fullFilename: string): string {
     let content = fs.readFileSync(fullFilename, 'utf8');
     // Remove BOM if present (0xFEFF at start of file)
     if (content.charCodeAt(0) === 0xFEFF) {
@@ -41,10 +43,10 @@ export class BomStrippingFileHandler {
 
 /**
  * Strips BOM from file content if present
- * @param {string} content - The file content
- * @returns {string} Content with BOM removed
+ * @param content - The file content
+ * @returns Content with BOM removed
  */
-export function stripBOM(content) {
+export function stripBOM(content: string): string {
   if (content.charCodeAt(0) === 0xFEFF) {
     return content.slice(1);
   }

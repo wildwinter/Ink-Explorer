@@ -9,13 +9,22 @@ import { Compiler } from 'inkjs/compiler/Compiler';
 import { BomStrippingFileHandler, stripBOM } from '../utils/fileHandler.js';
 import { createErrorHandler, formatError } from '../utils/errors.js';
 import { extractStoryStructure, extractStoryInfo } from './analyzer.js';
+import type { StoryStructure, StoryInfo } from './analyzer.js';
+
+export interface CompilationResult {
+  success: boolean;
+  errors?: string[];
+  warnings: string[];
+  storyInfo?: StoryInfo;
+  structure?: StoryStructure;
+}
 
 /**
  * Compiles an Ink file and returns the result with structure analysis
- * @param {string} inkFilePath - Path to the Ink file to compile
- * @returns {Promise<Object>} Compilation result object
+ * @param inkFilePath - Path to the Ink file to compile
+ * @returns Compilation result object
  */
-export async function compileInk(inkFilePath) {
+export async function compileInk(inkFilePath: string): Promise<CompilationResult> {
   try {
     // Read the main ink file
     let inkContent = fs.readFileSync(inkFilePath, 'utf8');

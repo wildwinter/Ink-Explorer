@@ -1,13 +1,12 @@
 import { defineConfig } from 'vite';
 import electron from 'vite-plugin-electron';
-import path from 'path';
 
 export default defineConfig({
   plugins: [
     electron([
       {
         // Main process entry file
-        entry: 'src/main.js',
+        entry: 'src/main.ts',
         vite: {
           build: {
             outDir: 'dist-electron',
@@ -22,7 +21,7 @@ export default defineConfig({
       },
       {
         // Preload script - must be CommonJS for Electron sandbox
-        entry: 'src/preload.js',
+        entry: 'src/preload.ts',
         onstart(options) {
           // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete
           options.reload();

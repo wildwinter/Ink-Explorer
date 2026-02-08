@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, dialog, MenuItemConstructorOptions } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -8,15 +8,14 @@ import { RecentFilesManager } from './utils/recentFiles.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let mainWindow;
+let mainWindow: BrowserWindow | null;
 
 // Recent files management
 const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
 const recentFilesManager = new RecentFilesManager(recentFilesPath);
 
-
 // Function to compile Ink file and send results to renderer
-async function compileAndLogInk(inkFilePath) {
+async function compileAndLogInk(inkFilePath: string): Promise<void> {
   const result = await compileInk(inkFilePath);
 
   // Send result to renderer for logging
@@ -32,9 +31,9 @@ async function compileAndLogInk(inkFilePath) {
   } else {
     // Show error dialog on compilation failure
     const fileName = path.basename(inkFilePath);
-    const errorMessage = result.errors.join('\n\n');
+    const errorMessage = result.errors?.join('\n\n') || 'Unknown error';
 
-    await dialog.showMessageBox(mainWindow, {
+    await dialog.showMessageBox(mainWindow!, {
       type: 'error',
       title: 'Ink Compilation Failed',
       message: `Failed to compile ${fileName}`,
@@ -42,13 +41,11 @@ async function compileAndLogInk(inkFilePath) {
       buttons: ['OK']
     });
   }
-
-  return result;
 }
 
 // Function to show file picker and compile Ink
-async function loadInkFile() {
-  const result = await dialog.showOpenDialog(mainWindow, {
+async function loadInkFile(): Promise<void> {
+  const result = await dialog.showOpenDialog(mainWindow!, {
     title: 'Load Ink File',
     filters: [
       { name: 'Ink Files', extensions: ['ink'] },
@@ -63,9 +60,8 @@ async function loadInkFile() {
   }
 }
 
-
 // IPC handler (kept for compatibility)
-ipcMain.handle('compile-ink', async (_event, inkFilePath) => {
+ipcMain.handle('compile-ink', async (_event, inkFilePath: string) => {
   return await compileInk(inkFilePath);
 });
 
@@ -73,14 +69,27 @@ ipcMain.handle('compile-ink', async (_event, inkFilePath) => {
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
-function createWindow() {
+function createWindow(): void {
+  // Resolve preload script path correctly for dev and production
+  // In dev mode, use process.cwd() to get project root
+  // In production, use __dirname which is the dist-electron directory
+  const preloadPath = isDev
+    ? path.join(process.cwd(), 'dist-electron', 'preload.js')
+    : path.join(__dirname, 'preload.js');
+
+  console.log('CWD:', process.cwd());
+  console.log('__dirname:', __dirname);
+  console.log('Preload path:', preloadPath);
+  console.log('Preload exists:', fs.existsSync(preloadPath));
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      sandbox: false // Disable sandbox to ensure preload works
     }
   });
 
@@ -96,19 +105,19 @@ function createWindow() {
   });
 }
 
-function createMenu() {
+function createMenu(): void {
   const isMac = process.platform === 'darwin';
 
   // Build Recent Files submenu
   const recentFiles = recentFilesManager.getAll();
-  const recentFilesSubmenu = recentFiles.length > 0
+  const recentFilesSubmenu: MenuItemConstructorOptions[] = recentFiles.length > 0
     ? [
         ...recentFiles.map((filePath, index) => ({
           label: path.basename(filePath),
           accelerator: index < 9 ? `${isMac ? 'Cmd' : 'Ctrl'}+${index + 1}` : undefined,
           click: () => compileAndLogInk(filePath)
         })),
-        { type: 'separator' },
+        { type: 'separator' as const },
         {
           label: 'Clear Recent Files',
           click: () => {
@@ -124,19 +133,19 @@ function createMenu() {
         }
       ];
 
-  const template = [
+  const template: MenuItemConstructorOptions[] = [
     // App menu (macOS only)
     ...(isMac ? [{
       label: app.name,
       submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
         {
           label: 'Quit',
           accelerator: 'Command+Q',
@@ -153,13 +162,13 @@ function createMenu() {
           accelerator: isMac ? 'Cmd+O' : 'Ctrl+O',
           click: () => loadInkFile()
         },
-        { type: 'separator' },
+        { type: 'separator' as const },
         {
           label: 'Recent Files',
           submenu: recentFilesSubmenu
         },
         ...(isMac ? [] : [
-          { type: 'separator' },
+          { type: 'separator' as const },
           {
             label: 'Quit',
             accelerator: 'Alt+F4',
@@ -172,20 +181,20 @@ function createMenu() {
     {
       label: 'Edit',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
         ...(isMac ? [
-          { role: 'pasteAndMatchStyle' },
-          { role: 'delete' },
-          { role: 'selectAll' }
+          { role: 'pasteAndMatchStyle' as const },
+          { role: 'delete' as const },
+          { role: 'selectAll' as const }
         ] : [
-          { role: 'delete' },
-          { type: 'separator' },
-          { role: 'selectAll' }
+          { role: 'delete' as const },
+          { type: 'separator' as const },
+          { role: 'selectAll' as const }
         ])
       ]
     },
@@ -193,30 +202,30 @@ function createMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'reload' as const },
+        { role: 'forceReload' as const },
+        { role: 'toggleDevTools' as const },
+        { type: 'separator' as const },
+        { role: 'resetZoom' as const },
+        { role: 'zoomIn' as const },
+        { role: 'zoomOut' as const },
+        { type: 'separator' as const },
+        { role: 'togglefullscreen' as const }
       ]
     },
     // Window menu
     {
       label: 'Window',
       submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
         ...(isMac ? [
-          { type: 'separator' },
-          { role: 'front' },
-          { type: 'separator' },
-          { role: 'window' }
+          { type: 'separator' as const },
+          { role: 'front' as const },
+          { type: 'separator' as const },
+          { role: 'window' as const }
         ] : [
-          { role: 'close' }
+          { role: 'close' as const }
         ])
       ]
     }
@@ -234,7 +243,7 @@ app.whenReady().then(() => {
   createWindow();
 
   // Auto-load most recent file after window is ready
-  mainWindow.webContents.once('did-finish-load', () => {
+  mainWindow!.webContents.once('did-finish-load', () => {
     const mostRecentFile = recentFilesManager.getMostRecent();
     if (mostRecentFile && fs.existsSync(mostRecentFile)) {
       compileAndLogInk(mostRecentFile);

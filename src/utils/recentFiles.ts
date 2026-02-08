@@ -4,7 +4,6 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 
 const MAX_RECENT_FILES = 10;
 
@@ -12,7 +11,10 @@ const MAX_RECENT_FILES = 10;
  * Recent Files Manager class
  */
 export class RecentFilesManager {
-  constructor(storagePath) {
+  private storagePath: string;
+  private recentFiles: string[];
+
+  constructor(storagePath: string) {
     this.storagePath = storagePath;
     this.recentFiles = [];
   }
@@ -20,7 +22,7 @@ export class RecentFilesManager {
   /**
    * Loads recent files from disk
    */
-  load() {
+  load(): void {
     try {
       if (fs.existsSync(this.storagePath)) {
         const data = fs.readFileSync(this.storagePath, 'utf8');
@@ -35,7 +37,7 @@ export class RecentFilesManager {
   /**
    * Saves recent files to disk
    */
-  save() {
+  save(): void {
     try {
       fs.writeFileSync(this.storagePath, JSON.stringify(this.recentFiles, null, 2));
     } catch (error) {
@@ -45,9 +47,9 @@ export class RecentFilesManager {
 
   /**
    * Adds a file to the recent files list
-   * @param {string} filePath - The file path to add
+   * @param filePath - The file path to add
    */
-  add(filePath) {
+  add(filePath: string): void {
     // Remove if already exists
     this.recentFiles = this.recentFiles.filter(f => f !== filePath);
     // Add to beginning
@@ -60,33 +62,33 @@ export class RecentFilesManager {
 
   /**
    * Gets the most recent file
-   * @returns {string|null} The most recent file path or null
+   * @returns The most recent file path or null
    */
-  getMostRecent() {
+  getMostRecent(): string | null {
     return this.recentFiles.length > 0 ? this.recentFiles[0] : null;
   }
 
   /**
    * Gets all recent files
-   * @returns {Array<string>} Array of recent file paths
+   * @returns Array of recent file paths
    */
-  getAll() {
+  getAll(): string[] {
     return [...this.recentFiles];
   }
 
   /**
    * Clears all recent files
    */
-  clear() {
+  clear(): void {
     this.recentFiles = [];
     this.save();
   }
 
   /**
    * Gets the count of recent files
-   * @returns {number} Number of recent files
+   * @returns Number of recent files
    */
-  get length() {
+  get length(): number {
     return this.recentFiles.length;
   }
 }

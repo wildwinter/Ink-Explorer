@@ -21,9 +21,11 @@
   "author": "Ian Thomas",
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^25.2.2",
     "check-node-version": "^4.2.1",
     "electron": "^40.2.1",
     "electron-builder": "^26.7.0",
+    "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.29.0"
   },
