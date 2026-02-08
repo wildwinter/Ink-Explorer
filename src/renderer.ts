@@ -2,6 +2,7 @@
 
 import type { CompilationResult } from './ink/compiler.js';
 import type { StitchInfo } from './ink/analyzer.js';
+import { createGraphVisualization } from './graphVisualizer.js';
 
 // Extend Window interface for our API
 declare global {
@@ -59,18 +60,9 @@ function setupCompileResultListener(): void {
       console.log('\nStory Info:', result.storyInfo);
       console.log('\nStructure:', result.structure);
 
-      // Display story info in left pane
-      const storyInfoHTML = `
-        <pre>${JSON.stringify({
-          canContinue: result.storyInfo.canContinue,
-          choiceCount: result.storyInfo.choiceCount,
-          currentTags: result.storyInfo.currentTags,
-          globalTags: result.storyInfo.globalTags,
-          knotCount: result.structure.knots.length,
-          stitchCount: result.structure.knots.reduce((sum, k) => sum + k.stitches.length, 0)
-        }, null, 2)}</pre>
-      `;
-      structureOutput.innerHTML = storyInfoHTML;
+      // Display interactive graph in left pane
+      structureOutput.innerHTML = ''; // Clear previous content
+      createGraphVisualization('structure-output', result.structure);
 
       // Display knots and stitches with their exits in right pane
       if (result.structure.knots.length === 0) {

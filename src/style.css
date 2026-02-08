@@ -47,6 +47,17 @@ body {
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.6;
+  position: relative;
+}
+
+#structure-output {
+  padding: 0;
+  overflow: hidden;
+}
+
+#structure-output svg {
+  background: #1e1e1e;
+  display: block;
 }
 
 #structure-output pre {

@@ -3,7 +3,7 @@
  * Analyzes compiled Ink stories to extract structure and flow information
  */
 
-import type { Story, Container } from 'inkjs/compiler/Compiler';
+import type { Story } from 'inkjs/compiler/Compiler';
 
 export interface DivertInfo {
   source: string;
@@ -54,7 +54,7 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
       const targetPath = obj.targetPath;
       if (targetPath) {
         diverts.push({
-          source: path.join('.'),
+          source: path.join('.') || 'root',
           target: targetPath.componentsString || targetPath.toString(),
           isConditional: obj.hasCondition || false,
           isFunctionCall: obj.pushesToStack || false
@@ -71,7 +71,7 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
 
     // Traverse content property
     if (obj.content && Array.isArray(obj.content)) {
-      obj.content.forEach((item) => {
+      obj.content.forEach((item: unknown) => {
         diverts.push(...findDiverts(item, path));
       });
     }
@@ -88,6 +88,20 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
       for (const [name, namedItem] of obj.namedOnlyContent) {
         diverts.push(...findDiverts(namedItem, [...path, name]));
       }
+    }
+
+    // Traverse choice content (for diverts inside choices)
+    if (obj.innerContent && Array.isArray(obj.innerContent)) {
+      obj.innerContent.forEach((item: unknown) => {
+        diverts.push(...findDiverts(item, path));
+      });
+    }
+
+    // Traverse conditional branches
+    if (obj.branches && Array.isArray(obj.branches)) {
+      obj.branches.forEach((branch: unknown) => {
+        diverts.push(...findDiverts(branch, path));
+      });
     }
   }
 
