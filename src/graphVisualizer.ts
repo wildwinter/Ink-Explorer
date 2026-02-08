@@ -789,7 +789,7 @@ export function createGraphVisualization(
         .distance(150)
         .strength(0.01))
       .force('collision', d3.forceCollide<any>()
-        .radius(30)
+        .radius(40)
         .strength(0.2)
         .iterations(2))
       .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9))
@@ -875,17 +875,39 @@ export function createGraphVisualization(
     renderPositions();
   }
 
-  // Drag functions - update target position and release to simulation
+  // Drag functions - update target position and move stitches with knots
+  let dragStartX: number;
+  let dragStartY: number;
+
   function dragStarted(event: any) {
     if (!event.active) simulation.alphaTarget(0.3).restart();
     event.subject.fx = event.subject.x;
     event.subject.fy = event.subject.y;
+    dragStartX = event.subject.x;
+    dragStartY = event.subject.y;
   }
 
   function dragged(event: any) {
     // Update position during drag
     event.subject.fx = event.x;
     event.subject.fy = event.y;
+
+    // If dragging a knot, move its stitches too
+    if (event.subject.type === 'knot') {
+      const dx = event.x - dragStartX;
+      const dy = event.y - dragStartY;
+
+      graph.nodes.forEach(n => {
+        if (n.type === 'stitch' && n.knotName === event.subject.id) {
+          if (n.x !== undefined && n.y !== undefined) {
+            const originalX = (n as any).targetX || n.x;
+            const originalY = (n as any).targetY || n.y;
+            n.fx = originalX + dx;
+            n.fy = originalY + dy;
+          }
+        }
+      });
+    }
   }
 
   function dragEnded(event: any) {
@@ -898,6 +920,25 @@ export function createGraphVisualization(
     event.subject.y = newY;
     event.subject.targetX = newX;
     event.subject.targetY = newY;
+
+    // If dragging a knot, update stitch targets too
+    if (event.subject.type === 'knot') {
+      const dx = newX - dragStartX;
+      const dy = newY - dragStartY;
+
+      graph.nodes.forEach(n => {
+        if (n.type === 'stitch' && n.knotName === event.subject.id) {
+          const originalX = (n as any).targetX || n.x;
+          const originalY = (n as any).targetY || n.y;
+          n.x = originalX + dx;
+          n.y = originalY + dy;
+          (n as any).targetX = originalX + dx;
+          (n as any).targetY = originalY + dy;
+          n.fx = null;
+          n.fy = null;
+        }
+      });
+    }
 
     // Release fixed position so simulation takes over
     event.subject.fx = null;
