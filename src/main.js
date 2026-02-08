@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Compiler } from 'inkjs/compiler/Compiler';
@@ -28,8 +28,37 @@ class BomStrippingFileHandler {
   }
 }
 
-// IPC handler for Ink compilation
-ipcMain.handle('compile-ink', async (event, inkFilePath) => {
+// Function to compile Ink file and send results to renderer
+async function compileAndLogInk(inkFilePath) {
+  const result = await compileInk(inkFilePath);
+
+  // Send result to renderer for logging
+  if (mainWindow) {
+    mainWindow.webContents.send('ink-compile-result', result);
+  }
+
+  return result;
+}
+
+// Function to show file picker and compile Ink
+async function loadInkFile() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Load Ink File',
+    filters: [
+      { name: 'Ink Files', extensions: ['ink'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const inkFilePath = result.filePaths[0];
+    await compileAndLogInk(inkFilePath);
+  }
+}
+
+// Core Ink compilation function
+async function compileInk(inkFilePath) {
   try {
     // Read the main ink file
     let inkContent = fs.readFileSync(inkFilePath, 'utf8');
@@ -79,6 +108,11 @@ ipcMain.handle('compile-ink', async (event, inkFilePath) => {
       warnings: []
     };
   }
+}
+
+// IPC handler (kept for compatibility)
+ipcMain.handle('compile-ink', async (event, inkFilePath) => {
+  return await compileInk(inkFilePath);
 });
 
 // Check if we're in development mode
@@ -135,7 +169,13 @@ function createMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Load Ink...',
+          accelerator: isMac ? 'Cmd+O' : 'Ctrl+O',
+          click: () => loadInkFile()
+        },
         ...(isMac ? [] : [
+          { type: 'separator' },
           {
             label: 'Quit',
             accelerator: 'Alt+F4',

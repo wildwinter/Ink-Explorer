@@ -7,7 +7,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose IPC API to renderer for Ink compilation
 contextBridge.exposeInMainWorld('api', {
-  compileInk: (inkFilePath) => {
-    return ipcRenderer.invoke('compile-ink', inkFilePath);
+  // Listen for compile results from main process
+  onCompileResult: (callback) => {
+    ipcRenderer.on('ink-compile-result', (event, result) => {
+      callback(result);
+    });
   }
 });
