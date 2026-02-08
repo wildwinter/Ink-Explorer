@@ -215,7 +215,7 @@ export function createGraphVisualization(
     .join('marker')
     .attr('id', d => d)
     .attr('viewBox', '0 -5 10 10')
-    .attr('refX', 20)
+    .attr('refX', 9)
     .attr('refY', 0)
     .attr('markerWidth', 6)
     .attr('markerHeight', 6)
@@ -241,30 +241,45 @@ export function createGraphVisualization(
   };
 
   // Function to compute hierarchical positions (left-to-right based on story flow)
-  function computeHierarchicalPositions(graph: Graph) {
-    // Build adjacency map
+  function computeHierarchicalPositions(graph: Graph, knotGroups: Map<string, GraphNode[]>) {
+    // Build adjacency map (only for knot-level connections)
     const adjacency = new Map<string, Set<string>>();
-    graph.nodes.forEach(n => adjacency.set(n.id, new Set()));
+    graph.nodes.forEach(n => {
+      if (n.type === 'knot') {
+        adjacency.set(n.id, new Set());
+      }
+    });
 
     graph.links.forEach(link => {
       const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
       const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
-      adjacency.get(sourceId)?.add(targetId);
+
+      // Only track knot-to-knot connections for horizontal positioning
+      const sourceNode = graph.nodes.find(n => n.id === sourceId);
+      const targetNode = graph.nodes.find(n => n.id === targetId);
+
+      if (sourceNode && targetNode) {
+        const sourceKnot = sourceNode.type === 'knot' ? sourceNode.id : sourceNode.knotName;
+        const targetKnot = targetNode.type === 'knot' ? targetNode.id : targetNode.knotName;
+
+        if (sourceKnot && targetKnot && sourceKnot !== targetKnot) {
+          adjacency.get(sourceKnot)?.add(targetKnot);
+        }
+      }
     });
 
-    // Compute depth (distance from start) for each node using BFS
+    // Compute depth (distance from start) for knots using BFS
     const depths = new Map<string, number>();
     const visited = new Set<string>();
     const queue: Array<{ id: string; depth: number }> = [];
 
     // Start with the first knot in the structure (assume it's the entry point)
-    if (graph.nodes.length > 0) {
-      const firstKnot = graph.nodes.find(n => n.type === 'knot');
-      if (firstKnot) {
-        queue.push({ id: firstKnot.id, depth: 0 });
-        visited.add(firstKnot.id);
-        depths.set(firstKnot.id, 0);
-      }
+    const knots = graph.nodes.filter(n => n.type === 'knot');
+    if (knots.length > 0) {
+      const firstKnot = knots[0];
+      queue.push({ id: firstKnot.id, depth: 0 });
+      visited.add(firstKnot.id);
+      depths.set(firstKnot.id, 0);
     }
 
     // BFS to assign depths
@@ -283,44 +298,146 @@ export function createGraphVisualization(
       }
     }
 
-    // Assign positions to any unvisited nodes
-    graph.nodes.forEach(n => {
+    // Assign positions to any unvisited knots
+    knots.forEach(n => {
       if (!depths.has(n.id)) {
         depths.set(n.id, 0);
       }
     });
 
-    // Position nodes based on depth
-    const depthSpacing = 300;
-    const verticalSpacing = 150;
+    // Position knots based on depth
+    const depthSpacing = 350;
+    const knotVerticalSpacing = 200;
+    const stitchVerticalOffset = 100;
+    const stitchHorizontalSpacing = 150;
 
-    // Group nodes by depth
-    const nodesByDepth = new Map<number, GraphNode[]>();
-    graph.nodes.forEach(n => {
+    // Group knots by depth
+    const knotsByDepth = new Map<number, GraphNode[]>();
+    knots.forEach(n => {
       const depth = depths.get(n.id) || 0;
-      if (!nodesByDepth.has(depth)) {
-        nodesByDepth.set(depth, []);
+      if (!knotsByDepth.has(depth)) {
+        knotsByDepth.set(depth, []);
       }
-      nodesByDepth.get(depth)!.push(n);
+      knotsByDepth.get(depth)!.push(n);
     });
 
-    // Assign x,y positions
-    nodesByDepth.forEach((nodes, depth) => {
-      nodes.forEach((node, index) => {
-        node.x = width * 0.15 + depth * depthSpacing;
-        node.y = height / 2 + (index - (nodes.length - 1) / 2) * verticalSpacing;
+    // Assign positions to knots and their stitches
+    knotsByDepth.forEach((knotsAtDepth, depth) => {
+      knotsAtDepth.forEach((knotNode, knotIndex) => {
+        const baseX = width * 0.15 + depth * depthSpacing;
+        const baseY = height / 2 + (knotIndex - (knotsAtDepth.length - 1) / 2) * knotVerticalSpacing;
+
+        // Get stitches for this knot (in order from original structure)
+        const stitches = knotGroups.get(knotNode.id) || [];
+
+        if (stitches.length > 0) {
+          // Knot is expanded - calculate container dimensions first
+          const stitchesPerRow = 3;
+          const totalRows = Math.ceil(stitches.length / stitchesPerRow);
+
+          // Calculate the width needed for stitches
+          const stitchesInFirstRow = Math.min(stitchesPerRow, stitches.length);
+          const containerPadding = 50;
+          const containerWidth = (stitchesInFirstRow * stitchHorizontalSpacing) + containerPadding * 2;
+
+          // Calculate container height
+          const knotHeight = 50;
+          const stitchRowSpacing = 80;
+          const containerHeight = knotHeight + stitchVerticalOffset + (totalRows * stitchRowSpacing) + containerPadding;
+
+          // Position knot at the top of the container, centered
+          knotNode.x = baseX;
+          knotNode.y = baseY;
+
+          // Store container dimensions on the knot for later use
+          (knotNode as any).containerWidth = containerWidth;
+          (knotNode as any).containerHeight = containerHeight;
+
+          // Position stitches below the knot in order
+          stitches.forEach((stitch, stitchIndex) => {
+            const row = Math.floor(stitchIndex / stitchesPerRow);
+            const col = stitchIndex % stitchesPerRow;
+            const stitchesInThisRow = Math.min(stitchesPerRow, stitches.length - row * stitchesPerRow);
+
+            stitch.x = baseX + (col - (stitchesInThisRow - 1) / 2) * stitchHorizontalSpacing;
+            stitch.y = baseY + stitchVerticalOffset + row * stitchRowSpacing;
+          });
+        } else {
+          // Knot is collapsed or has no stitches - position normally
+          knotNode.x = baseX;
+          knotNode.y = baseY;
+          (knotNode as any).containerWidth = undefined;
+        }
       });
     });
   }
 
+  // Helper function to get node dimensions
+  const getNodeDimensions = (node: GraphNode) => {
+    if (node.type === 'knot') {
+      const width = (node as any).containerWidth ? (node as any).containerWidth - 4 : 100;
+      return { width, height: 50 };
+    } else {
+      return { width: 80, height: 40 };
+    }
+  };
+
+  // Helper function to calculate intersection point of line with rectangle
+  const getIntersectionPoint = (
+    cx: number, cy: number, // center of rectangle
+    width: number, height: number, // dimensions of rectangle
+    tx: number, ty: number // target point (to calculate direction)
+  ) => {
+    // Calculate angle from center to target
+    const dx = tx - cx;
+    const dy = ty - cy;
+
+    if (dx === 0 && dy === 0) {
+      return { x: cx, y: cy };
+    }
+
+    const angle = Math.atan2(dy, dx);
+
+    // Half dimensions
+    const hw = width / 2;
+    const hh = height / 2;
+
+    // Calculate intersection with rectangle edges
+    // Check all four edges and find which one the line intersects
+    const absAngle = Math.abs(angle);
+    const cornerAngle = Math.atan2(hh, hw);
+
+    let x, y;
+
+    if (absAngle <= cornerAngle) {
+      // Right edge
+      x = cx + hw;
+      y = cy + Math.tan(angle) * hw;
+    } else if (absAngle <= Math.PI - cornerAngle) {
+      // Top or bottom edge
+      if (angle > 0) {
+        // Bottom edge
+        y = cy + hh;
+        x = cx + hh / Math.tan(angle);
+      } else {
+        // Top edge
+        y = cy - hh;
+        x = cx - hh / Math.tan(angle);
+      }
+    } else {
+      // Left edge
+      x = cx - hw;
+      y = cy - Math.tan(angle) * hw;
+    }
+
+    return { x, y };
+  };
+
   // Function to update the visualization
-  function updateVisualization() {
+  function updateVisualization(recomputeLayout = false) {
     const visibleGraph = computeVisibleGraph(fullGraph);
 
-    // Compute hierarchical positions
-    computeHierarchicalPositions(visibleGraph);
-
-    // Group nodes by knot for containment
+    // Group nodes by knot for containment (do this first, before positioning)
     const knotGroups = new Map<string, GraphNode[]>();
 
     visibleGraph.nodes.forEach(n => {
@@ -329,6 +446,7 @@ export function createGraphVisualization(
       }
     });
 
+    // Get stitches in their original order from the full graph structure
     visibleGraph.nodes.forEach(n => {
       if (n.type === 'stitch' && n.knotName) {
         const stitches = knotGroups.get(n.knotName);
@@ -338,51 +456,119 @@ export function createGraphVisualization(
       }
     });
 
+    // Sort stitches by their original order in the structure
+    knotGroups.forEach((stitches, knotId) => {
+      const knotInStructure = structure.knots.find(k => k.name === knotId);
+      if (knotInStructure) {
+        stitches.sort((a, b) => {
+          const aIndex = knotInStructure.stitches.findIndex(s => `${knotId}.${s.name}` === a.id);
+          const bIndex = knotInStructure.stitches.findIndex(s => `${knotId}.${s.name}` === b.id);
+          return aIndex - bIndex;
+        });
+      }
+    });
+
+    // Compute positions for nodes that don't have them yet
+    // For stitches, always recompute based on their parent knot's position
+    visibleGraph.nodes.forEach(n => {
+      if (n.type === 'stitch' && n.knotName) {
+        // Find parent knot in fullGraph to get its position
+        const parentKnot = fullGraph.nodes.find(node => node.id === n.knotName);
+        if (parentKnot && parentKnot.x !== undefined && parentKnot.y !== undefined) {
+          // Get stitches for this knot
+          const stitches = knotGroups.get(n.knotName) || [];
+          const stitchIndex = stitches.findIndex(s => s.id === n.id);
+
+          if (stitchIndex >= 0) {
+            // Calculate stitch position relative to knot
+            const stitchesPerRow = 3;
+            const row = Math.floor(stitchIndex / stitchesPerRow);
+            const col = stitchIndex % stitchesPerRow;
+            const stitchesInThisRow = Math.min(stitchesPerRow, stitches.length - row * stitchesPerRow);
+            const stitchHorizontalSpacing = 150;
+            const stitchVerticalOffset = 100;
+
+            n.x = parentKnot.x + (col - (stitchesInThisRow - 1) / 2) * stitchHorizontalSpacing;
+            n.y = parentKnot.y + stitchVerticalOffset + row * 80;
+          }
+        }
+      }
+    });
+
+    // Only do full hierarchical layout if this is the first time or forced
+    const needsLayout = recomputeLayout || !fullGraph.nodes.every(n => n.type === 'stitch' || (n.x !== undefined && n.y !== undefined));
+    if (needsLayout) {
+      computeHierarchicalPositions(visibleGraph, knotGroups);
+    }
+
     // Stop existing simulation if any
     if (simulation) {
       simulation.stop();
     }
 
-    // Create a minimal force simulation for maintaining link structure
-    // but with animation disabled
+    // Create a dummy simulation just for D3's link handling
+    // We don't actually run it - just use it to convert link IDs to node references
     simulation = d3.forceSimulation(visibleGraph.nodes as any)
       .force('link', d3.forceLink(visibleGraph.links as any)
-        .id((d: any) => d.id)
-        .distance(150)
-        .strength(0.3))
-      .force('charge', d3.forceManyBody().strength(-300))
-      .force('collision', d3.forceCollide().radius(50))
-      .force('stitch-containment', () => {
-        // Keep stitches close to their parent knot
-        visibleGraph.nodes.forEach(n => {
-          if (n.type === 'stitch' && n.knotName) {
-            const parent = visibleGraph.nodes.find(p => p.id === n.knotName);
-            if (parent && parent.x !== undefined && parent.y !== undefined) {
-              const dx = (parent.x - (n.x || 0)) * 0.2;
-              const dy = (parent.y - (n.y || 0)) * 0.2;
-              n.x = (n.x || 0) + dx;
-              n.y = (n.y || 0) + dy;
-            }
-          }
-        });
-      })
-      .alphaDecay(0.5) // Fast decay
-      .velocityDecay(0.8) // High friction
-      .alpha(0.3) // Start with low energy
-      .alphaMin(0.001); // Stop quickly
-
-    // Run a few ticks then stop to get a stable layout without animation
-    simulation.tick(50);
-    simulation.stop();
+        .id((d: any) => d.id))
+      .stop(); // Stop immediately without any ticks
 
     // Function to render positions
     const renderPositions = () => {
-      // Update links
+      // Update links - calculate edge-to-edge positions
       link
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
+        .attr('x1', (d: any) => {
+          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          if (!source || !target) return 0;
+
+          const dims = getNodeDimensions(source);
+          const intersection = getIntersectionPoint(
+            source.x || 0, source.y || 0,
+            dims.width, dims.height,
+            target.x || 0, target.y || 0
+          );
+          return intersection.x;
+        })
+        .attr('y1', (d: any) => {
+          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          if (!source || !target) return 0;
+
+          const dims = getNodeDimensions(source);
+          const intersection = getIntersectionPoint(
+            source.x || 0, source.y || 0,
+            dims.width, dims.height,
+            target.x || 0, target.y || 0
+          );
+          return intersection.y;
+        })
+        .attr('x2', (d: any) => {
+          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          if (!source || !target) return 0;
+
+          const dims = getNodeDimensions(target);
+          const intersection = getIntersectionPoint(
+            target.x || 0, target.y || 0,
+            dims.width, dims.height,
+            source.x || 0, source.y || 0
+          );
+          return intersection.x;
+        })
+        .attr('y2', (d: any) => {
+          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          if (!source || !target) return 0;
+
+          const dims = getNodeDimensions(target);
+          const intersection = getIntersectionPoint(
+            target.x || 0, target.y || 0,
+            dims.width, dims.height,
+            source.x || 0, source.y || 0
+          );
+          return intersection.y;
+        });
 
       // Update nodes
       node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
@@ -397,21 +583,38 @@ export function createGraphVisualization(
           return;
         }
 
-        // Calculate bounding box for knot and its stitches
-        const allNodes = [knotNode, ...stitches];
-        const xs = allNodes.map(n => n.x || 0);
-        const ys = allNodes.map(n => n.y || 0);
+        // Use stored container dimensions if available
+        const containerWidth = (knotNode as any).containerWidth;
+        const containerHeight = (knotNode as any).containerHeight;
 
-        const minX = Math.min(...xs) - 50;
-        const maxX = Math.max(...xs) + 50;
-        const minY = Math.min(...ys) - 50;
-        const maxY = Math.max(...ys) + 50;
+        if (containerWidth && containerHeight) {
+          // Position container to align with knot's top edge
+          const knotY = knotNode.y || 0;
+          const knotHeight = 50;
+          const containerY = knotY - knotHeight / 2; // Top edge of knot
 
-        d3.select(this)
-          .attr('x', minX)
-          .attr('y', minY)
-          .attr('width', maxX - minX)
-          .attr('height', maxY - minY);
+          d3.select(this)
+            .attr('x', (knotNode.x || 0) - containerWidth / 2)
+            .attr('y', containerY)
+            .attr('width', containerWidth)
+            .attr('height', containerHeight);
+        } else {
+          // Fallback: calculate bounding box
+          const allNodes = [knotNode, ...stitches];
+          const xs = allNodes.map(n => n.x || 0);
+          const ys = allNodes.map(n => n.y || 0);
+
+          const minX = Math.min(...xs) - 50;
+          const maxX = Math.max(...xs) + 50;
+          const minY = Math.min(...ys) - 50;
+          const maxY = Math.max(...ys) + 50;
+
+          d3.select(this)
+            .attr('x', minX)
+            .attr('y', minY)
+            .attr('width', maxX - minX)
+            .attr('height', maxY - minY);
+        }
       });
     };
 
@@ -458,9 +661,25 @@ export function createGraphVisualization(
               .on('drag', dragged)
               .on('end', dragEnded));
 
-          // Add circle
-          nodeEnter.append('circle')
-            .attr('r', d => d.type === 'knot' ? 25 : 18)
+          // Add rounded rectangle
+          nodeEnter.append('rect')
+            .attr('class', 'node-rect')
+            .attr('width', d => {
+              if (d.type === 'knot' && (d as any).containerWidth) {
+                return (d as any).containerWidth - 4; // Slight inset from container
+              }
+              return d.type === 'knot' ? 100 : 80;
+            })
+            .attr('height', d => d.type === 'knot' ? 50 : 40)
+            .attr('x', d => {
+              if (d.type === 'knot' && (d as any).containerWidth) {
+                return -((d as any).containerWidth - 4) / 2;
+              }
+              return d.type === 'knot' ? -50 : -40;
+            })
+            .attr('y', d => d.type === 'knot' ? -25 : -20)
+            .attr('rx', 8)
+            .attr('ry', 8)
             .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71')
             .attr('stroke', '#ecf0f1')
             .attr('stroke-width', 2)
@@ -471,7 +690,7 @@ export function createGraphVisualization(
             .attr('class', 'node-label')
             .text(d => d.label)
             .attr('x', 0)
-            .attr('y', d => d.type === 'knot' ? -30 : -23)
+            .attr('y', 5)
             .attr('text-anchor', 'middle')
             .attr('fill', '#ecf0f1')
             .attr('font-size', d => d.type === 'knot' ? '13px' : '11px')
@@ -479,22 +698,22 @@ export function createGraphVisualization(
             .style('pointer-events', 'none')
             .style('user-select', 'none');
 
-          // Add type indicator
+          // Add type indicator (small icon in top-left corner)
           nodeEnter.append('text')
             .attr('class', 'node-icon')
-            .attr('x', 0)
-            .attr('y', 5)
-            .attr('text-anchor', 'middle')
-            .attr('font-size', d => d.type === 'knot' ? '18px' : '14px')
+            .attr('x', d => d.type === 'knot' ? -42 : -32)
+            .attr('y', d => d.type === 'knot' ? -15 : -10)
+            .attr('text-anchor', 'start')
+            .attr('font-size', '12px')
             .style('pointer-events', 'none');
 
           // Add collapse indicator (only for knots with stitches)
           nodeEnter.filter(d => d.type === 'knot' && knotHasStitches(d.id))
             .append('text')
             .attr('class', 'collapse-indicator')
-            .attr('x', 20)
-            .attr('y', -20)
-            .attr('text-anchor', 'middle')
+            .attr('x', 42)
+            .attr('y', -15)
+            .attr('text-anchor', 'end')
             .attr('font-size', '14px')
             .style('pointer-events', 'none')
             .style('user-select', 'none');
@@ -517,6 +736,20 @@ export function createGraphVisualization(
       );
 
     // Update node content
+    node.select('.node-rect')
+      .attr('width', d => {
+        if (d.type === 'knot' && (d as any).containerWidth) {
+          return (d as any).containerWidth - 4;
+        }
+        return d.type === 'knot' ? 100 : 80;
+      })
+      .attr('x', d => {
+        if (d.type === 'knot' && (d as any).containerWidth) {
+          return -((d as any).containerWidth - 4) / 2;
+        }
+        return d.type === 'knot' ? -50 : -40;
+      });
+
     node.select('.node-icon')
       .text(d => {
         if (d.type === 'knot') {
@@ -545,29 +778,109 @@ export function createGraphVisualization(
   }
 
   // Drag functions (no animation, just direct position updates)
+  let stitchOffsets: Map<string, { x: number; y: number }> | null = null;
+
   function dragStarted(event: any) {
     event.subject.fx = event.subject.x;
     event.subject.fy = event.subject.y;
+
+    // If dragging a knot, store the initial offset of each stitch from the knot
+    if (event.subject.type === 'knot') {
+      stitchOffsets = new Map();
+      const knotId = event.subject.id;
+
+      node.each(function(d: any) {
+        if (d.type === 'stitch' && d.knotName === knotId) {
+          stitchOffsets!.set(d.id, {
+            x: (d.x || 0) - event.subject.x,
+            y: (d.y || 0) - event.subject.y
+          });
+        }
+      });
+    }
   }
 
   function dragged(event: any) {
+    // Update the dragged node's position
     event.subject.fx = event.x;
     event.subject.fy = event.y;
     event.subject.x = event.x;
     event.subject.y = event.y;
 
-    // Manually update the visual position
-    d3.select(event.sourceEvent.target.parentNode)
-      .attr('transform', `translate(${event.x},${event.y})`);
+    // Find and update the visual position of the dragged node more robustly
+    node.each(function(d: any) {
+      if (d === event.subject) {
+        d3.select(this).attr('transform', `translate(${d.x},${d.y})`);
+      }
+    });
 
-    // Update connected links
+    // If dragging a knot, move its stitches using stored offsets
+    if (event.subject.type === 'knot' && stitchOffsets) {
+      const knotId = event.subject.id;
+
+      node.each(function(d: any) {
+        if (d.type === 'stitch' && d.knotName === knotId) {
+          const offset = stitchOffsets!.get(d.id);
+          if (offset) {
+            // Position stitch relative to knot's current position
+            d.x = event.subject.x + offset.x;
+            d.y = event.subject.y + offset.y;
+            d3.select(this).attr('transform', `translate(${d.x},${d.y})`);
+          }
+        }
+      });
+
+      // Update container position immediately after moving stitches
+      const containerWidth = (event.subject as any).containerWidth;
+      const containerHeight = (event.subject as any).containerHeight;
+
+      if (containerWidth && containerHeight) {
+        containers.each(function(d: any) {
+          if (d.knotId === knotId) {
+            const knotHeight = 50;
+            const containerY = event.subject.y - knotHeight / 2;
+
+            d3.select(this)
+              .attr('x', event.subject.x - containerWidth / 2)
+              .attr('y', containerY)
+              .attr('width', containerWidth)
+              .attr('height', containerHeight);
+          }
+        });
+      }
+    }
+
+    // Update all connected links (for both the knot and its stitches)
     link.each(function(d: any) {
-      if (d.source === event.subject || d.target === event.subject) {
-        d3.select(this)
-          .attr('x1', d.source.x)
-          .attr('y1', d.source.y)
-          .attr('x2', d.target.x)
-          .attr('y2', d.target.y);
+      const source = typeof d.source === 'object' ? d.source : fullGraph.nodes.find((n: GraphNode) => n.id === d.source);
+      const target = typeof d.target === 'object' ? d.target : fullGraph.nodes.find((n: GraphNode) => n.id === d.target);
+
+      // Update if either end of the link is affected
+      if (source === event.subject || target === event.subject ||
+          (event.subject.type === 'knot' && (source?.knotName === event.subject.id || target?.knotName === event.subject.id))) {
+
+        if (source && target) {
+          // Calculate edge-to-edge positions
+          const sourceDims = getNodeDimensions(source);
+          const sourceIntersection = getIntersectionPoint(
+            source.x || 0, source.y || 0,
+            sourceDims.width, sourceDims.height,
+            target.x || 0, target.y || 0
+          );
+
+          const targetDims = getNodeDimensions(target);
+          const targetIntersection = getIntersectionPoint(
+            target.x || 0, target.y || 0,
+            targetDims.width, targetDims.height,
+            source.x || 0, source.y || 0
+          );
+
+          d3.select(this)
+            .attr('x1', sourceIntersection.x)
+            .attr('y1', sourceIntersection.y)
+            .attr('x2', targetIntersection.x)
+            .attr('y2', targetIntersection.y);
+        }
       }
     });
   }
@@ -575,6 +888,7 @@ export function createGraphVisualization(
   function dragEnded(event: any) {
     event.subject.fx = null;
     event.subject.fy = null;
+    stitchOffsets = null;
   }
 
   // Add zoom behavior
@@ -601,28 +915,38 @@ export function createGraphVisualization(
     .attr('rx', 5);
 
   // Knot legend
-  legend.append('circle')
-    .attr('cx', 0)
-    .attr('cy', 0)
-    .attr('r', 8)
-    .attr('fill', '#3498db');
+  legend.append('rect')
+    .attr('x', -8)
+    .attr('y', -8)
+    .attr('width', 35)
+    .attr('height', 16)
+    .attr('rx', 4)
+    .attr('ry', 4)
+    .attr('fill', '#3498db')
+    .attr('stroke', '#ecf0f1')
+    .attr('stroke-width', 1);
 
   legend.append('text')
-    .attr('x', 15)
+    .attr('x', 35)
     .attr('y', 5)
     .attr('fill', '#ecf0f1')
     .attr('font-size', '11px')
     .text('Knot');
 
   // Stitch legend
-  legend.append('circle')
-    .attr('cx', 0)
-    .attr('cy', 25)
-    .attr('r', 8)
-    .attr('fill', '#2ecc71');
+  legend.append('rect')
+    .attr('x', -8)
+    .attr('y', 17)
+    .attr('width', 30)
+    .attr('height', 16)
+    .attr('rx', 4)
+    .attr('ry', 4)
+    .attr('fill', '#2ecc71')
+    .attr('stroke', '#ecf0f1')
+    .attr('stroke-width', 1);
 
   legend.append('text')
-    .attr('x', 15)
+    .attr('x', 35)
     .attr('y', 30)
     .attr('fill', '#ecf0f1')
     .attr('font-size', '11px')
