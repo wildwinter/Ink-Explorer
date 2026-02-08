@@ -120,6 +120,41 @@ async function loadInkFile() {
   }
 }
 
+// Extract story structure (knots and stitches)
+function extractStoryStructure(story) {
+  const structure = {
+    knots: []
+  };
+
+  try {
+    // Access the main content container which holds all knots
+    const mainContainer = story.mainContentContainer;
+
+    if (mainContainer && mainContainer.namedContent) {
+      // Iterate through all named content (knots)
+      for (const [name, content] of mainContainer.namedContent) {
+        const knot = {
+          name: name,
+          stitches: []
+        };
+
+        // Check if this knot has stitches (sub-containers)
+        if (content && content.namedContent) {
+          for (const [stitchName, stitchContent] of content.namedContent) {
+            knot.stitches.push(stitchName);
+          }
+        }
+
+        structure.knots.push(knot);
+      }
+    }
+  } catch (error) {
+    console.error('Error extracting story structure:', error);
+  }
+
+  return structure;
+}
+
 // Format an error object to a readable string
 function formatError(error) {
   if (typeof error === 'string') {
@@ -225,6 +260,9 @@ async function compileInk(inkFilePath) {
       };
     }
 
+    // Extract knots and stitches structure
+    const structure = extractStoryStructure(story);
+
     // Return success with story info
     return {
       success: true,
@@ -234,7 +272,8 @@ async function compileInk(inkFilePath) {
         choiceCount: story.currentChoices.length,
         currentTags: story.currentTags,
         globalTags: story.globalTags
-      }
+      },
+      structure: structure
     };
 
   } catch (error) {
@@ -431,7 +470,5 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
