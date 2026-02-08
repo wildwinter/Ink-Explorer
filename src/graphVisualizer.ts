@@ -11,7 +11,6 @@ interface GraphNode {
   label: string;
   type: 'knot' | 'stitch';
   knotName?: string; // For stitches, track which knot they belong to
-  collapsed?: boolean; // For knots, track collapse state
   x?: number;
   y?: number;
   fx?: number | null;
@@ -44,8 +43,7 @@ function structureToGraph(structure: StoryStructure): Graph {
       nodes.push({
         id: knotId,
         label: knot.name,
-        type: 'knot',
-        collapsed: false // Start with all knots expanded
+        type: 'knot'
       });
       nodeIds.add(knotId);
     }
@@ -101,75 +99,6 @@ function structureToGraph(structure: StoryStructure): Graph {
   return { nodes, links };
 }
 
-/**
- * Computes the visible graph based on collapse states
- * Filters out stitches of collapsed knots and redirects their links to the parent knot
- */
-function computeVisibleGraph(fullGraph: Graph): Graph {
-  const visibleNodes: GraphNode[] = [];
-  const visibleLinks: GraphLink[] = [];
-
-  // Track which knots are collapsed
-  const collapsedKnots = new Set<string>();
-  fullGraph.nodes.forEach(node => {
-    if (node.type === 'knot' && node.collapsed) {
-      collapsedKnots.add(node.id);
-    }
-  });
-
-  // Filter nodes: include all knots and only stitches from expanded knots
-  fullGraph.nodes.forEach(node => {
-    if (node.type === 'knot') {
-      visibleNodes.push(node);
-    } else if (node.type === 'stitch' && node.knotName && !collapsedKnots.has(node.knotName)) {
-      visibleNodes.push(node);
-    }
-  });
-
-  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-
-  // Helper function to resolve a node ID to its visible representation
-  const resolveNodeId = (nodeId: string): string => {
-    // If the node is visible, return it as-is
-    if (visibleNodeIds.has(nodeId)) {
-      return nodeId;
-    }
-
-    // If it's a stitch of a collapsed knot, return the knot ID
-    const node = fullGraph.nodes.find(n => n.id === nodeId);
-    if (node && node.type === 'stitch' && node.knotName && collapsedKnots.has(node.knotName)) {
-      return node.knotName;
-    }
-
-    return nodeId;
-  };
-
-  // Process links: redirect links involving hidden stitches to their parent knots
-  fullGraph.links.forEach(link => {
-    const resolvedSource = resolveNodeId(typeof link.source === 'string' ? link.source : (link.source as any).id);
-    const resolvedTarget = resolveNodeId(typeof link.target === 'string' ? link.target : (link.target as any).id);
-
-    // Only add if both source and target are visible (or resolved to visible)
-    if (visibleNodeIds.has(resolvedSource) && visibleNodeIds.has(resolvedTarget)) {
-      // Avoid duplicate links (multiple stitches might resolve to same knot-to-knot link)
-      const linkExists = visibleLinks.some(l => {
-        const lSource = typeof l.source === 'string' ? l.source : (l.source as any).id;
-        const lTarget = typeof l.target === 'string' ? l.target : (l.target as any).id;
-        return lSource === resolvedSource && lTarget === resolvedTarget;
-      });
-
-      if (!linkExists) {
-        visibleLinks.push({
-          source: resolvedSource,
-          target: resolvedTarget,
-          isConditional: link.isConditional
-        });
-      }
-    }
-  });
-
-  return { nodes: visibleNodes, links: visibleLinks };
-}
 
 /**
  * Creates an interactive graph visualization
@@ -187,10 +116,10 @@ export function createGraphVisualization(
   // Clear previous content
   container.innerHTML = '';
 
-  // Convert structure to graph (this is the full graph with all nodes)
-  const fullGraph = structureToGraph(structure);
+  // Convert structure to graph
+  const graph = structureToGraph(structure);
 
-  if (fullGraph.nodes.length === 0) {
+  if (graph.nodes.length === 0) {
     container.innerHTML = '<div class="empty-message">No nodes to display</div>';
     return;
   }
@@ -225,28 +154,25 @@ export function createGraphVisualization(
     .attr('fill', d => d === 'arrow-conditional' ? '#f39c12' : '#95a5a6');
 
   // Create layers
-  const knotContainers = g.append('g').attr('class', 'knot-containers');
   const linksLayer = g.append('g').attr('class', 'links');
   const nodesLayer = g.append('g').attr('class', 'nodes');
 
   // Variables to hold D3 selections and simulation
   let simulation: d3.Simulation<d3.SimulationNodeDatum, undefined>;
   let link: d3.Selection<SVGLineElement, GraphLink, SVGGElement, unknown>;
-  let containers: d3.Selection<SVGRectElement, any, SVGGElement, unknown>;
   let node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>;
+  let renderPositions: () => void;
 
-  // Helper function to check if a knot has stitches
-  const knotHasStitches = (knotId: string): boolean => {
-    return fullGraph.nodes.some(n => n.type === 'stitch' && n.knotName === knotId);
-  };
-
-  // Function to compute hierarchical positions (left-to-right based on story flow)
+  // Function to compute hierarchical positions (top-to-bottom based on story flow)
   function computeHierarchicalPositions(graph: Graph, knotGroups: Map<string, GraphNode[]>) {
     // Build adjacency map (only for knot-level connections)
     const adjacency = new Map<string, Set<string>>();
+    const reverseAdjacency = new Map<string, Set<string>>();
+
     graph.nodes.forEach(n => {
       if (n.type === 'knot') {
         adjacency.set(n.id, new Set());
+        reverseAdjacency.set(n.id, new Set());
       }
     });
 
@@ -254,7 +180,7 @@ export function createGraphVisualization(
       const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
       const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
 
-      // Only track knot-to-knot connections for horizontal positioning
+      // Only track knot-to-knot connections
       const sourceNode = graph.nodes.find(n => n.id === sourceId);
       const targetNode = graph.nodes.find(n => n.id === targetId);
 
@@ -264,11 +190,12 @@ export function createGraphVisualization(
 
         if (sourceKnot && targetKnot && sourceKnot !== targetKnot) {
           adjacency.get(sourceKnot)?.add(targetKnot);
+          reverseAdjacency.get(targetKnot)?.add(sourceKnot);
         }
       }
     });
 
-    // Compute depth (distance from start) for knots using BFS
+    // Compute depth (vertical level) for knots using BFS
     const depths = new Map<string, number>();
     const visited = new Set<string>();
     const queue: Array<{ id: string; depth: number }> = [];
@@ -305,11 +232,11 @@ export function createGraphVisualization(
       }
     });
 
-    // Position knots based on depth
-    const depthSpacing = 350;
-    const knotVerticalSpacing = 200;
-    const stitchVerticalOffset = 100;
-    const stitchHorizontalSpacing = 150;
+    // Layout parameters
+    const depthSpacing = 300; // Horizontal spacing between knot levels (left-to-right)
+    const knotVerticalSpacing = 200; // Vertical spacing when spreading multiple children
+    const stitchVerticalOffset = 100; // Offset for stitches below their knot
+    const stitchHorizontalSpacing = 150; // Horizontal spacing for stitches
 
     // Group knots by depth
     const knotsByDepth = new Map<number, GraphNode[]>();
@@ -321,65 +248,375 @@ export function createGraphVisualization(
       knotsByDepth.get(depth)!.push(n);
     });
 
-    // Assign positions to knots and their stitches
-    knotsByDepth.forEach((knotsAtDepth, depth) => {
-      knotsAtDepth.forEach((knotNode, knotIndex) => {
-        const baseX = width * 0.15 + depth * depthSpacing;
-        const baseY = height / 2 + (knotIndex - (knotsAtDepth.length - 1) / 2) * knotVerticalSpacing;
+    // Track vertical positions for knots (horizontal layout: left-to-right with vertical spreading)
+    const verticalPositions = new Map<string, number>();
+    const positioned = new Set<string>();
+
+    // Layout knots level by level, processing parents before children
+    const sortedDepths = Array.from(knotsByDepth.keys()).sort((a, b) => a - b);
+
+    sortedDepths.forEach(depth => {
+      const knotsAtDepth = knotsByDepth.get(depth) || [];
+
+      // First, position any nodes at this depth that don't have parents
+      knotsAtDepth.forEach(knotNode => {
+        const parents = reverseAdjacency.get(knotNode.id);
+        if (!parents || parents.size === 0) {
+          if (!positioned.has(knotNode.id)) {
+            // Root nodes - spread vertically centered
+            const rootNodes = knotsAtDepth.filter(n => {
+              const p = reverseAdjacency.get(n.id);
+              return !p || p.size === 0;
+            });
+            const index = rootNodes.indexOf(knotNode);
+            const totalRoots = rootNodes.length;
+            const centerY = height / 2;
+            const spreadHeight = (totalRoots - 1) * knotVerticalSpacing;
+            verticalPositions.set(knotNode.id, centerY - spreadHeight / 2 + index * knotVerticalSpacing);
+            positioned.add(knotNode.id);
+          }
+        }
+      });
+
+      // Now position children based on their parents
+      // Group children by their parent(s)
+      const childrenByParent = new Map<string, Set<string>>();
+
+      if (depth > 0) {
+        const prevDepthKnots = knotsByDepth.get(depth - 1) || [];
+        prevDepthKnots.forEach(parentKnot => {
+          const children = adjacency.get(parentKnot.id);
+          if (children && children.size > 0) {
+            childrenByParent.set(parentKnot.id, children);
+          }
+        });
+
+        // Position children for each parent
+        childrenByParent.forEach((children, parentId) => {
+          const parentY = verticalPositions.get(parentId);
+          if (parentY === undefined) return;
+
+          const childrenArray = Array.from(children).filter(c => !positioned.has(c));
+          if (childrenArray.length === 0) return;
+
+          if (childrenArray.length === 1) {
+            // Single child - same vertical position as parent
+            const childId = childrenArray[0];
+            verticalPositions.set(childId, parentY);
+            positioned.add(childId);
+          } else {
+            // Multiple children - spread vertically, centered as a group around parent
+            const spreadHeight = (childrenArray.length - 1) * knotVerticalSpacing;
+            childrenArray.forEach((childId, index) => {
+              const childY = parentY - spreadHeight / 2 + index * knotVerticalSpacing;
+
+              // If child already has a position from another parent, average them
+              if (verticalPositions.has(childId)) {
+                const existingY = verticalPositions.get(childId)!;
+                verticalPositions.set(childId, (existingY + childY) / 2);
+              } else {
+                verticalPositions.set(childId, childY);
+              }
+              positioned.add(childId);
+            });
+          }
+        });
+      }
+
+      // Finally, position any remaining unpositioned nodes at this depth
+      knotsAtDepth.forEach(knotNode => {
+        if (!positioned.has(knotNode.id)) {
+          // Unconnected nodes - spread them out vertically
+          const unpositioned = knotsAtDepth.filter(n => !positioned.has(n.id));
+          const index = unpositioned.indexOf(knotNode);
+          const centerY = height / 2;
+          const spreadHeight = (unpositioned.length - 1) * knotVerticalSpacing;
+          verticalPositions.set(knotNode.id, centerY - spreadHeight / 2 + index * knotVerticalSpacing);
+          positioned.add(knotNode.id);
+        }
+      });
+
+      // Now position knots and their stitches
+      knotsAtDepth.forEach((knotNode) => {
+        // Horizontal layout: X based on depth (left-to-right), Y from vertical position map
+        const baseX = 100 + depth * depthSpacing;
+        const baseY = verticalPositions.get(knotNode.id)!;
+
+        // Store original baseY for later adjustment
+        (knotNode as any).originalBaseY = baseY;
 
         // Get stitches for this knot (in order from original structure)
         const stitches = knotGroups.get(knotNode.id) || [];
 
         if (stitches.length > 0) {
-          // Knot is expanded - calculate container dimensions first
-          const stitchesPerRow = 3;
-          const totalRows = Math.ceil(stitches.length / stitchesPerRow);
+          // Build adjacency map for stitches within this knot
+          const stitchAdjacency = new Map<string, Set<string>>();
+          const stitchReverseAdjacency = new Map<string, Set<string>>();
 
-          // Calculate the width needed for stitches
-          const stitchesInFirstRow = Math.min(stitchesPerRow, stitches.length);
-          const containerPadding = 50;
-          const containerWidth = (stitchesInFirstRow * stitchHorizontalSpacing) + containerPadding * 2;
-
-          // Calculate container height
-          const knotHeight = 50;
-          const stitchRowSpacing = 80;
-          const containerHeight = knotHeight + stitchVerticalOffset + (totalRows * stitchRowSpacing) + containerPadding;
-
-          // Position knot at the top of the container, centered
-          knotNode.x = baseX;
-          knotNode.y = baseY;
-
-          // Store container dimensions on the knot for later use
-          (knotNode as any).containerWidth = containerWidth;
-          (knotNode as any).containerHeight = containerHeight;
-
-          // Position stitches below the knot in order
-          stitches.forEach((stitch, stitchIndex) => {
-            const row = Math.floor(stitchIndex / stitchesPerRow);
-            const col = stitchIndex % stitchesPerRow;
-            const stitchesInThisRow = Math.min(stitchesPerRow, stitches.length - row * stitchesPerRow);
-
-            stitch.x = baseX + (col - (stitchesInThisRow - 1) / 2) * stitchHorizontalSpacing;
-            stitch.y = baseY + stitchVerticalOffset + row * stitchRowSpacing;
+          stitches.forEach(s => {
+            stitchAdjacency.set(s.id, new Set());
+            stitchReverseAdjacency.set(s.id, new Set());
           });
-        } else {
-          // Knot is collapsed or has no stitches - position normally
+
+          // Find connections between stitches in this knot
+          graph.links.forEach(link => {
+            const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
+            const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+
+            const sourceStitch = stitches.find(s => s.id === sourceId);
+            const targetStitch = stitches.find(s => s.id === targetId);
+
+            if (sourceStitch && targetStitch) {
+              stitchAdjacency.get(sourceId)?.add(targetId);
+              stitchReverseAdjacency.get(targetId)?.add(sourceId);
+            }
+          });
+
+          // Compute depths for stitches
+          const stitchDepths = new Map<string, number>();
+          const stitchVisited = new Set<string>();
+          const stitchQueue: Array<{ id: string; depth: number }> = [];
+
+          // Start with first stitch or stitches with no parents
+          const rootStitches = stitches.filter(s =>
+            stitchReverseAdjacency.get(s.id)?.size === 0
+          );
+
+          if (rootStitches.length > 0) {
+            rootStitches.forEach(s => {
+              stitchQueue.push({ id: s.id, depth: 0 });
+              stitchVisited.add(s.id);
+              stitchDepths.set(s.id, 0);
+            });
+          } else {
+            // No clear root, start with first stitch
+            stitchQueue.push({ id: stitches[0].id, depth: 0 });
+            stitchVisited.add(stitches[0].id);
+            stitchDepths.set(stitches[0].id, 0);
+          }
+
+          // BFS to assign depths
+          while (stitchQueue.length > 0) {
+            const { id, depth } = stitchQueue.shift()!;
+            const neighbors = stitchAdjacency.get(id);
+
+            if (neighbors) {
+              for (const neighborId of neighbors) {
+                if (!stitchVisited.has(neighborId)) {
+                  stitchVisited.add(neighborId);
+                  stitchDepths.set(neighborId, depth + 1);
+                  stitchQueue.push({ id: neighborId, depth: depth + 1 });
+                }
+              }
+            }
+          }
+
+          // Assign depths to any unvisited stitches
+          stitches.forEach(s => {
+            if (!stitchDepths.has(s.id)) {
+              stitchDepths.set(s.id, 0);
+            }
+          });
+
+          // Group stitches by depth
+          const stitchesByDepth = new Map<number, typeof stitches>();
+          stitches.forEach(s => {
+            const d = stitchDepths.get(s.id) || 0;
+            if (!stitchesByDepth.has(d)) {
+              stitchesByDepth.set(d, []);
+            }
+            stitchesByDepth.get(d)!.push(s);
+          });
+
+          // Layout stitches using the same parent-child rule
+          const stitchHorizontalPositions = new Map<string, number>();
+          const stitchPositioned = new Set<string>();
+          const stitchVerticalSpacing = 90;
+
+          const sortedStitchDepths = Array.from(stitchesByDepth.keys()).sort((a, b) => a - b);
+
+          sortedStitchDepths.forEach(stitchDepth => {
+            const stitchesAtDepth = stitchesByDepth.get(stitchDepth) || [];
+
+            // Position root stitches (no parents)
+            stitchesAtDepth.forEach(stitch => {
+              const parents = stitchReverseAdjacency.get(stitch.id);
+              if (!parents || parents.size === 0) {
+                if (!stitchPositioned.has(stitch.id)) {
+                  const rootStitches = stitchesAtDepth.filter(s => {
+                    const p = stitchReverseAdjacency.get(s.id);
+                    return !p || p.size === 0;
+                  });
+                  const index = rootStitches.indexOf(stitch);
+                  const spreadWidth = (rootStitches.length - 1) * stitchHorizontalSpacing;
+                  stitchHorizontalPositions.set(stitch.id, - spreadWidth / 2 + index * stitchHorizontalSpacing);
+                  stitchPositioned.add(stitch.id);
+                }
+              }
+            });
+
+            // Position children based on their parents
+            if (stitchDepth > 0) {
+              const prevDepthStitches = stitchesByDepth.get(stitchDepth - 1) || [];
+
+              prevDepthStitches.forEach(parentStitch => {
+                const children = stitchAdjacency.get(parentStitch.id);
+                if (!children || children.size === 0) return;
+
+                const parentX = stitchHorizontalPositions.get(parentStitch.id);
+                if (parentX === undefined) return;
+
+                const childrenArray = Array.from(children).filter(c => !stitchPositioned.has(c));
+                if (childrenArray.length === 0) return;
+
+                if (childrenArray.length === 1) {
+                  // Single child - center below parent
+                  const childId = childrenArray[0];
+                  stitchHorizontalPositions.set(childId, parentX);
+                  stitchPositioned.add(childId);
+                } else {
+                  // Multiple children - spread horizontally, centered as a group below parent
+                  const spreadWidth = (childrenArray.length - 1) * stitchHorizontalSpacing;
+                  childrenArray.forEach((childId, index) => {
+                    const childX = parentX - spreadWidth / 2 + index * stitchHorizontalSpacing;
+
+                    if (stitchHorizontalPositions.has(childId)) {
+                      const existingX = stitchHorizontalPositions.get(childId)!;
+                      stitchHorizontalPositions.set(childId, (existingX + childX) / 2);
+                    } else {
+                      stitchHorizontalPositions.set(childId, childX);
+                    }
+                    stitchPositioned.add(childId);
+                  });
+                }
+              });
+            }
+
+            // Position any remaining stitches at this depth
+            stitchesAtDepth.forEach(stitch => {
+              if (!stitchPositioned.has(stitch.id)) {
+                const unpositioned = stitchesAtDepth.filter(s => !stitchPositioned.has(s.id));
+                const index = unpositioned.indexOf(stitch);
+                const spreadWidth = (unpositioned.length - 1) * stitchHorizontalSpacing;
+                stitchHorizontalPositions.set(stitch.id, - spreadWidth / 2 + index * stitchHorizontalSpacing);
+                stitchPositioned.add(stitch.id);
+              }
+            });
+          });
+
+          // Position stitches
+          stitches.forEach((stitch) => {
+            const stitchDepth = stitchDepths.get(stitch.id) || 0;
+            stitch.x = baseX + (stitchHorizontalPositions.get(stitch.id) || 0);
+            stitch.y = baseY + stitchVerticalOffset + stitchDepth * stitchVerticalSpacing;
+          });
+
+          // Position knot
           knotNode.x = baseX;
           knotNode.y = baseY;
-          (knotNode as any).containerWidth = undefined;
+        } else {
+          // Knot has no stitches - position normally
+          knotNode.x = baseX;
+          knotNode.y = baseY;
+        }
+      });
+    });
+
+    // Post-process to fix overlapping knots and avoid stitches
+    // Iterate through knots by depth to check for conflicts
+    sortedDepths.forEach(depth => {
+      const knotsAtDepth = knotsByDepth.get(depth) || [];
+
+      knotsAtDepth.forEach(knotNode => {
+        if (!knotNode.x || !knotNode.y) return;
+
+        // Check for conflicts with earlier knots and their stitches
+        let hasConflict = true;
+        let offsetAttempts = 0;
+        const maxOffsetAttempts = 20;
+
+        while (hasConflict && offsetAttempts < maxOffsetAttempts) {
+          hasConflict = false;
+
+          // Check all knots at earlier depths (to the left)
+          for (let d = 0; d < depth; d++) {
+            const earlierKnots = knotsByDepth.get(d) || [];
+
+            for (const earlierKnot of earlierKnots) {
+              if (!earlierKnot.x || !earlierKnot.y) continue;
+
+              // Check if current knot overlaps with earlier knot
+              const xDist = Math.abs(knotNode.x - earlierKnot.x);
+              const yDist = Math.abs(knotNode.y - earlierKnot.y);
+
+              if (xDist < 120 && yDist < 60) {
+                // Knots overlap, offset current knot vertically
+                hasConflict = true;
+                knotNode.y += 80;
+                break;
+              }
+
+              // Check if current knot overlaps with earlier knot's stitches
+              const earlierStitches = knotGroups.get(earlierKnot.id) || [];
+              if (earlierStitches.length > 0) {
+                // Get bounds of earlier knot's stitches
+                const stitchYs = earlierStitches.map(s => s.y || 0);
+                const minStitchY = Math.min(...stitchYs, earlierKnot.y);
+                const maxStitchY = Math.max(...stitchYs, earlierKnot.y);
+
+                // Check if current knot is in the vertical range of the stitches
+                if (xDist < 150 && knotNode.y >= minStitchY - 60 && knotNode.y <= maxStitchY + 60) {
+                  // Current knot is in range of earlier knot's stitches, offset it
+                  hasConflict = true;
+                  knotNode.y = maxStitchY + 80;
+                  break;
+                }
+              }
+            }
+
+            if (hasConflict) break;
+          }
+
+          // Also check knots at the same depth
+          for (const otherKnot of knotsAtDepth) {
+            if (otherKnot === knotNode || !otherKnot.x || !otherKnot.y) continue;
+
+            const xDist = Math.abs(knotNode.x - otherKnot.x);
+            const yDist = Math.abs(knotNode.y - otherKnot.y);
+
+            if (xDist < 120 && yDist < 60) {
+              // Same position, offset vertically with larger spacing
+              hasConflict = true;
+              knotNode.y += 150;
+              break;
+            }
+          }
+
+          offsetAttempts++;
+        }
+
+        // Update stitch positions based on adjusted knot position
+        const stitches = knotGroups.get(knotNode.id) || [];
+        if (stitches.length > 0 && knotNode.y) {
+          const originalBaseY = (knotNode as any).originalBaseY || knotNode.y;
+          const yAdjustment = knotNode.y - originalBaseY;
+
+          // Only adjust if the knot was moved
+          if (yAdjustment !== 0) {
+            stitches.forEach(stitch => {
+              if (stitch.y !== undefined) {
+                stitch.y += yAdjustment;
+              }
+            });
+          }
         }
       });
     });
   }
 
-  // Helper function to get node dimensions
-  const getNodeDimensions = (node: GraphNode) => {
-    if (node.type === 'knot') {
-      const width = (node as any).containerWidth ? (node as any).containerWidth - 4 : 100;
-      return { width, height: 50 };
-    } else {
-      return { width: 80, height: 40 };
-    }
+  // Helper function to get node dimensions - all nodes are the same size now
+  const getNodeDimensions = (_node: GraphNode) => {
+    return { width: 100, height: 50 };
   };
 
   // Helper function to calculate intersection point of line with rectangle
@@ -434,20 +671,18 @@ export function createGraphVisualization(
   };
 
   // Function to update the visualization
-  function updateVisualization(recomputeLayout = false) {
-    const visibleGraph = computeVisibleGraph(fullGraph);
-
-    // Group nodes by knot for containment (do this first, before positioning)
+  function updateVisualization() {
+    // Group nodes by knot for positioning
     const knotGroups = new Map<string, GraphNode[]>();
 
-    visibleGraph.nodes.forEach(n => {
+    graph.nodes.forEach(n => {
       if (n.type === 'knot') {
         knotGroups.set(n.id, []);
       }
     });
 
-    // Get stitches in their original order from the full graph structure
-    visibleGraph.nodes.forEach(n => {
+    // Get stitches in their original order from the structure
+    graph.nodes.forEach(n => {
       if (n.type === 'stitch' && n.knotName) {
         const stitches = knotGroups.get(n.knotName);
         if (stitches) {
@@ -468,37 +703,10 @@ export function createGraphVisualization(
       }
     });
 
-    // Compute positions for nodes that don't have them yet
-    // For stitches, always recompute based on their parent knot's position
-    visibleGraph.nodes.forEach(n => {
-      if (n.type === 'stitch' && n.knotName) {
-        // Find parent knot in fullGraph to get its position
-        const parentKnot = fullGraph.nodes.find(node => node.id === n.knotName);
-        if (parentKnot && parentKnot.x !== undefined && parentKnot.y !== undefined) {
-          // Get stitches for this knot
-          const stitches = knotGroups.get(n.knotName) || [];
-          const stitchIndex = stitches.findIndex(s => s.id === n.id);
-
-          if (stitchIndex >= 0) {
-            // Calculate stitch position relative to knot
-            const stitchesPerRow = 3;
-            const row = Math.floor(stitchIndex / stitchesPerRow);
-            const col = stitchIndex % stitchesPerRow;
-            const stitchesInThisRow = Math.min(stitchesPerRow, stitches.length - row * stitchesPerRow);
-            const stitchHorizontalSpacing = 150;
-            const stitchVerticalOffset = 100;
-
-            n.x = parentKnot.x + (col - (stitchesInThisRow - 1) / 2) * stitchHorizontalSpacing;
-            n.y = parentKnot.y + stitchVerticalOffset + row * 80;
-          }
-        }
-      }
-    });
-
-    // Only do full hierarchical layout if this is the first time or forced
-    const needsLayout = recomputeLayout || !fullGraph.nodes.every(n => n.type === 'stitch' || (n.x !== undefined && n.y !== undefined));
+    // Only do full hierarchical layout if this is the first time
+    const needsLayout = !graph.nodes.every(n => n.type === 'stitch' || (n.x !== undefined && n.y !== undefined));
     if (needsLayout) {
-      computeHierarchicalPositions(visibleGraph, knotGroups);
+      computeHierarchicalPositions(graph, knotGroups);
     }
 
     // Stop existing simulation if any
@@ -506,20 +714,13 @@ export function createGraphVisualization(
       simulation.stop();
     }
 
-    // Create a dummy simulation just for D3's link handling
-    // We don't actually run it - just use it to convert link IDs to node references
-    simulation = d3.forceSimulation(visibleGraph.nodes as any)
-      .force('link', d3.forceLink(visibleGraph.links as any)
-        .id((d: any) => d.id))
-      .stop(); // Stop immediately without any ticks
-
     // Function to render positions
-    const renderPositions = () => {
+    renderPositions = () => {
       // Update links - calculate edge-to-edge positions
       link
         .attr('x1', (d: any) => {
-          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
-          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          const source = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
           if (!source || !target) return 0;
 
           const dims = getNodeDimensions(source);
@@ -531,8 +732,8 @@ export function createGraphVisualization(
           return intersection.x;
         })
         .attr('y1', (d: any) => {
-          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
-          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          const source = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
           if (!source || !target) return 0;
 
           const dims = getNodeDimensions(source);
@@ -544,8 +745,8 @@ export function createGraphVisualization(
           return intersection.y;
         })
         .attr('x2', (d: any) => {
-          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
-          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          const source = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
           if (!source || !target) return 0;
 
           const dims = getNodeDimensions(target);
@@ -557,8 +758,8 @@ export function createGraphVisualization(
           return intersection.x;
         })
         .attr('y2', (d: any) => {
-          const source = typeof d.source === 'object' ? d.source : visibleGraph.nodes.find(n => n.id === d.source);
-          const target = typeof d.target === 'object' ? d.target : visibleGraph.nodes.find(n => n.id === d.target);
+          const source = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+          const target = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
           if (!source || !target) return 0;
 
           const dims = getNodeDimensions(target);
@@ -572,56 +773,34 @@ export function createGraphVisualization(
 
       // Update nodes
       node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-
-      // Update knot containers to encompass their stitches
-      containers.each(function(d: any) {
-        const knotNode = visibleGraph.nodes.find(n => n.id === d.knotId);
-        if (!knotNode || knotNode.x === undefined || knotNode.y === undefined) return;
-
-        const stitches = d.stitches;
-        if (stitches.length === 0) {
-          return;
-        }
-
-        // Use stored container dimensions if available
-        const containerWidth = (knotNode as any).containerWidth;
-        const containerHeight = (knotNode as any).containerHeight;
-
-        if (containerWidth && containerHeight) {
-          // Position container to align with knot's top edge
-          const knotY = knotNode.y || 0;
-          const knotHeight = 50;
-          const containerY = knotY - knotHeight / 2; // Top edge of knot
-
-          d3.select(this)
-            .attr('x', (knotNode.x || 0) - containerWidth / 2)
-            .attr('y', containerY)
-            .attr('width', containerWidth)
-            .attr('height', containerHeight);
-        } else {
-          // Fallback: calculate bounding box
-          const allNodes = [knotNode, ...stitches];
-          const xs = allNodes.map(n => n.x || 0);
-          const ys = allNodes.map(n => n.y || 0);
-
-          const minX = Math.min(...xs) - 50;
-          const maxX = Math.max(...xs) + 50;
-          const minY = Math.min(...ys) - 50;
-          const maxY = Math.max(...ys) + 50;
-
-          d3.select(this)
-            .attr('x', minX)
-            .attr('y', minY)
-            .attr('width', maxX - minX)
-            .attr('height', maxY - minY);
-        }
-      });
     };
+
+    // Store original positions as target positions for the simulation
+    graph.nodes.forEach(n => {
+      (n as any).targetX = n.x;
+      (n as any).targetY = n.y;
+    });
+
+    // Create light simulation with collision detection
+    // Strong position forces keep nodes at their target positions
+    simulation = d3.forceSimulation(graph.nodes as any)
+      .force('link', d3.forceLink(graph.links as any)
+        .id((d: any) => d.id)
+        .distance(150)
+        .strength(0.01))
+      .force('collision', d3.forceCollide<any>()
+        .radius(30)
+        .strength(0.2)
+        .iterations(2))
+      .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9))
+      .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.9))
+      .alphaDecay(0.05)
+      .on('tick', renderPositions);
 
     // Update links
     link = linksLayer
       .selectAll<SVGLineElement, GraphLink>('line')
-      .data(visibleGraph.links, (d: GraphLink) => {
+      .data(graph.links, (d: GraphLink) => {
         const sourceId = typeof d.source === 'string' ? d.source : (d.source as any).id;
         const targetId = typeof d.target === 'string' ? d.target : (d.target as any).id;
         return `${sourceId}-${targetId}`;
@@ -632,26 +811,10 @@ export function createGraphVisualization(
       .attr('stroke-opacity', 0.6)
       .attr('marker-end', d => `url(#${d.isConditional ? 'arrow-conditional' : 'arrow'})`);
 
-    // Update knot container rectangles
-    const knotContainerData = Array.from(knotGroups.entries())
-      .map(([knotId, stitches]) => ({ knotId, stitches }))
-      .filter(d => d.stitches.length > 0); // Only show containers for expanded knots with stitches
-
-    containers = knotContainers
-      .selectAll<SVGRectElement, any>('rect')
-      .data(knotContainerData, (d: any) => d.knotId)
-      .join('rect')
-      .attr('class', 'knot-container')
-      .attr('fill', 'rgba(52, 152, 219, 0.1)')
-      .attr('stroke', '#3498db')
-      .attr('stroke-width', 2)
-      .attr('stroke-dasharray', '5,5')
-      .attr('rx', 10);
-
     // Update nodes
     node = nodesLayer
       .selectAll<SVGGElement, GraphNode>('g')
-      .data(visibleGraph.nodes, (d: GraphNode) => d.id)
+      .data(graph.nodes, (d: GraphNode) => d.id)
       .join(
         enter => {
           const nodeEnter = enter.append('g')
@@ -661,23 +824,13 @@ export function createGraphVisualization(
               .on('drag', dragged)
               .on('end', dragEnded));
 
-          // Add rounded rectangle
+          // Add rounded rectangle - all nodes same size now
           nodeEnter.append('rect')
             .attr('class', 'node-rect')
-            .attr('width', d => {
-              if (d.type === 'knot' && (d as any).containerWidth) {
-                return (d as any).containerWidth - 4; // Slight inset from container
-              }
-              return d.type === 'knot' ? 100 : 80;
-            })
-            .attr('height', d => d.type === 'knot' ? 50 : 40)
-            .attr('x', d => {
-              if (d.type === 'knot' && (d as any).containerWidth) {
-                return -((d as any).containerWidth - 4) / 2;
-              }
-              return d.type === 'knot' ? -50 : -40;
-            })
-            .attr('y', d => d.type === 'knot' ? -25 : -20)
+            .attr('width', 100)
+            .attr('height', 50)
+            .attr('x', -50)
+            .attr('y', -25)
             .attr('rx', 8)
             .attr('ry', 8)
             .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71')
@@ -693,7 +846,7 @@ export function createGraphVisualization(
             .attr('y', 5)
             .attr('text-anchor', 'middle')
             .attr('fill', '#ecf0f1')
-            .attr('font-size', d => d.type === 'knot' ? '13px' : '11px')
+            .attr('font-size', '12px')
             .attr('font-weight', d => d.type === 'knot' ? 'bold' : 'normal')
             .style('pointer-events', 'none')
             .style('user-select', 'none');
@@ -701,33 +854,16 @@ export function createGraphVisualization(
           // Add type indicator (small icon in top-left corner)
           nodeEnter.append('text')
             .attr('class', 'node-icon')
-            .attr('x', d => d.type === 'knot' ? -42 : -32)
-            .attr('y', d => d.type === 'knot' ? -15 : -10)
+            .attr('x', -42)
+            .attr('y', -15)
             .attr('text-anchor', 'start')
             .attr('font-size', '12px')
+            .text(d => d.type === 'knot' ? '📦' : '📎')
             .style('pointer-events', 'none');
 
-          // Add collapse indicator (only for knots with stitches)
-          nodeEnter.filter(d => d.type === 'knot' && knotHasStitches(d.id))
-            .append('text')
-            .attr('class', 'collapse-indicator')
-            .attr('x', 42)
-            .attr('y', -15)
-            .attr('text-anchor', 'end')
-            .attr('font-size', '14px')
-            .style('pointer-events', 'none')
-            .style('user-select', 'none');
-
           // Add tooltip
-          nodeEnter.append('title');
-
-          // Add click handler for knots with stitches to toggle collapse
-          nodeEnter.filter(d => d.type === 'knot' && knotHasStitches(d.id))
-            .on('click', function(event, d) {
-              event.stopPropagation();
-              d.collapsed = !d.collapsed;
-              updateVisualization();
-            });
+          nodeEnter.append('title')
+            .text(d => d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
 
           return nodeEnter;
         },
@@ -735,160 +871,42 @@ export function createGraphVisualization(
         exit => exit.remove()
       );
 
-    // Update node content
-    node.select('.node-rect')
-      .attr('width', d => {
-        if (d.type === 'knot' && (d as any).containerWidth) {
-          return (d as any).containerWidth - 4;
-        }
-        return d.type === 'knot' ? 100 : 80;
-      })
-      .attr('x', d => {
-        if (d.type === 'knot' && (d as any).containerWidth) {
-          return -((d as any).containerWidth - 4) / 2;
-        }
-        return d.type === 'knot' ? -50 : -40;
-      });
-
-    node.select('.node-icon')
-      .text(d => {
-        if (d.type === 'knot') {
-          return d.collapsed ? '📦' : '📦';
-        }
-        return '📎';
-      });
-
-    node.select('.collapse-indicator')
-      .text(d => d.collapsed ? '⊕' : '⊖')
-      .attr('fill', '#ecf0f1');
-
-    node.select('title')
-      .text(d => {
-        if (d.type === 'knot' && knotHasStitches(d.id)) {
-          return `Knot: ${d.id} (click to ${d.collapsed ? 'expand' : 'collapse'})`;
-        } else if (d.type === 'knot') {
-          return `Knot: ${d.id}`;
-        } else {
-          return `Stitch: ${d.id}`;
-        }
-      });
-
-    // Render the final positions (no animation)
+    // Render the final positions
     renderPositions();
   }
 
-  // Drag functions (no animation, just direct position updates)
-  let stitchOffsets: Map<string, { x: number; y: number }> | null = null;
-
+  // Drag functions - update target position and release to simulation
   function dragStarted(event: any) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
     event.subject.fx = event.subject.x;
     event.subject.fy = event.subject.y;
-
-    // If dragging a knot, store the initial offset of each stitch from the knot
-    if (event.subject.type === 'knot') {
-      stitchOffsets = new Map();
-      const knotId = event.subject.id;
-
-      node.each(function(d: any) {
-        if (d.type === 'stitch' && d.knotName === knotId) {
-          stitchOffsets!.set(d.id, {
-            x: (d.x || 0) - event.subject.x,
-            y: (d.y || 0) - event.subject.y
-          });
-        }
-      });
-    }
   }
 
   function dragged(event: any) {
-    // Update the dragged node's position
+    // Update position during drag
     event.subject.fx = event.x;
     event.subject.fy = event.y;
-    event.subject.x = event.x;
-    event.subject.y = event.y;
-
-    // Find and update the visual position of the dragged node more robustly
-    node.each(function(d: any) {
-      if (d === event.subject) {
-        d3.select(this).attr('transform', `translate(${d.x},${d.y})`);
-      }
-    });
-
-    // If dragging a knot, move its stitches using stored offsets
-    if (event.subject.type === 'knot' && stitchOffsets) {
-      const knotId = event.subject.id;
-
-      node.each(function(d: any) {
-        if (d.type === 'stitch' && d.knotName === knotId) {
-          const offset = stitchOffsets!.get(d.id);
-          if (offset) {
-            // Position stitch relative to knot's current position
-            d.x = event.subject.x + offset.x;
-            d.y = event.subject.y + offset.y;
-            d3.select(this).attr('transform', `translate(${d.x},${d.y})`);
-          }
-        }
-      });
-
-      // Update container position immediately after moving stitches
-      const containerWidth = (event.subject as any).containerWidth;
-      const containerHeight = (event.subject as any).containerHeight;
-
-      if (containerWidth && containerHeight) {
-        containers.each(function(d: any) {
-          if (d.knotId === knotId) {
-            const knotHeight = 50;
-            const containerY = event.subject.y - knotHeight / 2;
-
-            d3.select(this)
-              .attr('x', event.subject.x - containerWidth / 2)
-              .attr('y', containerY)
-              .attr('width', containerWidth)
-              .attr('height', containerHeight);
-          }
-        });
-      }
-    }
-
-    // Update all connected links (for both the knot and its stitches)
-    link.each(function(d: any) {
-      const source = typeof d.source === 'object' ? d.source : fullGraph.nodes.find((n: GraphNode) => n.id === d.source);
-      const target = typeof d.target === 'object' ? d.target : fullGraph.nodes.find((n: GraphNode) => n.id === d.target);
-
-      // Update if either end of the link is affected
-      if (source === event.subject || target === event.subject ||
-          (event.subject.type === 'knot' && (source?.knotName === event.subject.id || target?.knotName === event.subject.id))) {
-
-        if (source && target) {
-          // Calculate edge-to-edge positions
-          const sourceDims = getNodeDimensions(source);
-          const sourceIntersection = getIntersectionPoint(
-            source.x || 0, source.y || 0,
-            sourceDims.width, sourceDims.height,
-            target.x || 0, target.y || 0
-          );
-
-          const targetDims = getNodeDimensions(target);
-          const targetIntersection = getIntersectionPoint(
-            target.x || 0, target.y || 0,
-            targetDims.width, targetDims.height,
-            source.x || 0, source.y || 0
-          );
-
-          d3.select(this)
-            .attr('x1', sourceIntersection.x)
-            .attr('y1', sourceIntersection.y)
-            .attr('x2', targetIntersection.x)
-            .attr('y2', targetIntersection.y);
-        }
-      }
-    });
   }
 
   function dragEnded(event: any) {
+    if (!event.active) simulation.alphaTarget(0);
+    // Update both current position and target position to the new location
+    const newX = event.subject.fx;
+    const newY = event.subject.fy;
+
+    event.subject.x = newX;
+    event.subject.y = newY;
+    event.subject.targetX = newX;
+    event.subject.targetY = newY;
+
+    // Release fixed position so simulation takes over
     event.subject.fx = null;
     event.subject.fy = null;
-    stitchOffsets = null;
+
+    // Update the position forces to use the new target values
+    simulation.force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9));
+    simulation.force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.9));
+    simulation.alpha(0.3).restart();
   }
 
   // Add zoom behavior
@@ -903,14 +921,14 @@ export function createGraphVisualization(
   // Add legend
   const legend = svg.append('g')
     .attr('class', 'legend')
-    .attr('transform', `translate(20, ${height - 120})`);
+    .attr('transform', `translate(20, ${height - 80})`);
 
   // Legend background
   legend.append('rect')
     .attr('x', -10)
     .attr('y', -10)
     .attr('width', 150)
-    .attr('height', 110)
+    .attr('height', 70)
     .attr('fill', 'rgba(30, 30, 30, 0.8)')
     .attr('rx', 5);
 
@@ -967,21 +985,6 @@ export function createGraphVisualization(
     .attr('fill', '#ecf0f1')
     .attr('font-size', '11px')
     .text('Conditional');
-
-  // Collapse/expand legend
-  legend.append('text')
-    .attr('x', 0)
-    .attr('y', 75)
-    .attr('fill', '#ecf0f1')
-    .attr('font-size', '11px')
-    .text('⊖ = expanded');
-
-  legend.append('text')
-    .attr('x', 0)
-    .attr('y', 90)
-    .attr('fill', '#ecf0f1')
-    .attr('font-size', '11px')
-    .text('⊕ = collapsed');
 
   // Initial render
   updateVisualization();
