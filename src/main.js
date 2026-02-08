@@ -9,6 +9,52 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow;
 
+// Recent files management
+const MAX_RECENT_FILES = 10;
+let recentFiles = [];
+const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
+
+// Load recent files from disk
+function loadRecentFiles() {
+  try {
+    if (fs.existsSync(recentFilesPath)) {
+      const data = fs.readFileSync(recentFilesPath, 'utf8');
+      recentFiles = JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Failed to load recent files:', error);
+    recentFiles = [];
+  }
+}
+
+// Save recent files to disk
+function saveRecentFiles() {
+  try {
+    fs.writeFileSync(recentFilesPath, JSON.stringify(recentFiles, null, 2));
+  } catch (error) {
+    console.error('Failed to save recent files:', error);
+  }
+}
+
+// Add file to recent files list
+function addRecentFile(filePath) {
+  // Remove if already exists
+  recentFiles = recentFiles.filter(f => f !== filePath);
+  // Add to beginning
+  recentFiles.unshift(filePath);
+  // Keep only MAX_RECENT_FILES
+  recentFiles = recentFiles.slice(0, MAX_RECENT_FILES);
+  // Save
+  saveRecentFiles();
+  // Rebuild menu to show updated recent files
+  createMenu();
+}
+
+// Get most recent file
+function getMostRecentFile() {
+  return recentFiles.length > 0 ? recentFiles[0] : null;
+}
+
 // File handler that strips BOM from ink files
 class BomStrippingFileHandler {
   constructor(rootPath) {
@@ -35,6 +81,11 @@ async function compileAndLogInk(inkFilePath) {
   // Send result to renderer for logging
   if (mainWindow) {
     mainWindow.webContents.send('ink-compile-result', result);
+  }
+
+  // Add to recent files if compilation succeeded
+  if (result.success) {
+    addRecentFile(inkFilePath);
   }
 
   return result;
@@ -145,6 +196,31 @@ function createWindow() {
 function createMenu() {
   const isMac = process.platform === 'darwin';
 
+  // Build Recent Files submenu
+  const recentFilesSubmenu = recentFiles.length > 0
+    ? [
+        ...recentFiles.map((filePath, index) => ({
+          label: path.basename(filePath),
+          accelerator: index < 9 ? `${isMac ? 'Cmd' : 'Ctrl'}+${index + 1}` : undefined,
+          click: () => compileAndLogInk(filePath)
+        })),
+        { type: 'separator' },
+        {
+          label: 'Clear Recent Files',
+          click: () => {
+            recentFiles = [];
+            saveRecentFiles();
+            createMenu();
+          }
+        }
+      ]
+    : [
+        {
+          label: 'No Recent Files',
+          enabled: false
+        }
+      ];
+
   const template = [
     // App menu (macOS only)
     ...(isMac ? [{
@@ -173,6 +249,11 @@ function createMenu() {
           label: 'Load Ink...',
           accelerator: isMac ? 'Cmd+O' : 'Ctrl+O',
           click: () => loadInkFile()
+        },
+        { type: 'separator' },
+        {
+          label: 'Recent Files',
+          submenu: recentFilesSubmenu
         },
         ...(isMac ? [] : [
           { type: 'separator' },
@@ -243,8 +324,19 @@ function createMenu() {
 }
 
 app.whenReady().then(() => {
+  // Load recent files from disk
+  loadRecentFiles();
+
   createMenu();
   createWindow();
+
+  // Auto-load most recent file after window is ready
+  mainWindow.webContents.once('did-finish-load', () => {
+    const mostRecentFile = getMostRecentFile();
+    if (mostRecentFile && fs.existsSync(mostRecentFile)) {
+      compileAndLogInk(mostRecentFile);
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
