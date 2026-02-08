@@ -1,8 +1,9 @@
 import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Compiler } from 'inkjs/compiler/Compiler';
 import fs from 'fs';
+import { compileInk } from './ink/compiler.js';
+import { RecentFilesManager } from './utils/recentFiles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,69 +11,9 @@ const __dirname = path.dirname(__filename);
 let mainWindow;
 
 // Recent files management
-const MAX_RECENT_FILES = 10;
-let recentFiles = [];
 const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
+const recentFilesManager = new RecentFilesManager(recentFilesPath);
 
-// Load recent files from disk
-function loadRecentFiles() {
-  try {
-    if (fs.existsSync(recentFilesPath)) {
-      const data = fs.readFileSync(recentFilesPath, 'utf8');
-      recentFiles = JSON.parse(data);
-    }
-  } catch (error) {
-    console.error('Failed to load recent files:', error);
-    recentFiles = [];
-  }
-}
-
-// Save recent files to disk
-function saveRecentFiles() {
-  try {
-    fs.writeFileSync(recentFilesPath, JSON.stringify(recentFiles, null, 2));
-  } catch (error) {
-    console.error('Failed to save recent files:', error);
-  }
-}
-
-// Add file to recent files list
-function addRecentFile(filePath) {
-  // Remove if already exists
-  recentFiles = recentFiles.filter(f => f !== filePath);
-  // Add to beginning
-  recentFiles.unshift(filePath);
-  // Keep only MAX_RECENT_FILES
-  recentFiles = recentFiles.slice(0, MAX_RECENT_FILES);
-  // Save
-  saveRecentFiles();
-  // Rebuild menu to show updated recent files
-  createMenu();
-}
-
-// Get most recent file
-function getMostRecentFile() {
-  return recentFiles.length > 0 ? recentFiles[0] : null;
-}
-
-// File handler that strips BOM from ink files
-class BomStrippingFileHandler {
-  constructor(rootPath) {
-    this.rootPath = rootPath;
-  }
-
-  ResolveInkFilename(includeName) {
-    return path.resolve(this.rootPath, includeName);
-  }
-
-  LoadInkFileContents(fullFilename) {
-    let content = fs.readFileSync(fullFilename, 'utf8');
-    if (content.charCodeAt(0) === 0xFEFF) {
-      content = content.slice(1);
-    }
-    return content;
-  }
-}
 
 // Function to compile Ink file and send results to renderer
 async function compileAndLogInk(inkFilePath) {
@@ -85,7 +26,9 @@ async function compileAndLogInk(inkFilePath) {
 
   // Add to recent files if compilation succeeded
   if (result.success) {
-    addRecentFile(inkFilePath);
+    recentFilesManager.add(inkFilePath);
+    // Rebuild menu to show updated recent files
+    createMenu();
   } else {
     // Show error dialog on compilation failure
     const fileName = path.basename(inkFilePath);
@@ -120,173 +63,9 @@ async function loadInkFile() {
   }
 }
 
-// Extract story structure (knots and stitches)
-function extractStoryStructure(story) {
-  const structure = {
-    knots: []
-  };
-
-  try {
-    // Access the main content container which holds all knots
-    const mainContainer = story.mainContentContainer;
-
-    if (mainContainer && mainContainer.namedContent) {
-      // Iterate through all named content (knots)
-      for (const [name, content] of mainContainer.namedContent) {
-        const knot = {
-          name: name,
-          stitches: []
-        };
-
-        // Check if this knot has stitches (sub-containers)
-        if (content && content.namedContent) {
-          for (const [stitchName, stitchContent] of content.namedContent) {
-            knot.stitches.push(stitchName);
-          }
-        }
-
-        structure.knots.push(knot);
-      }
-    }
-  } catch (error) {
-    console.error('Error extracting story structure:', error);
-  }
-
-  return structure;
-}
-
-// Format an error object to a readable string
-function formatError(error) {
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  // Handle error objects with various properties
-  if (error && typeof error === 'object') {
-    let parts = [];
-
-    // Add line number if available
-    if (error.lineNumber !== undefined) {
-      parts.push(`Line ${error.lineNumber}`);
-    }
-
-    // Add error type if available
-    if (error.type) {
-      parts.push(`[${error.type}]`);
-    }
-
-    // Add the message
-    const message = error.message || error.text || String(error);
-    parts.push(message);
-
-    return parts.join(' ');
-  }
-
-  return String(error);
-}
-
-// Core Ink compilation function
-async function compileInk(inkFilePath) {
-  try {
-    // Read the main ink file
-    let inkContent = fs.readFileSync(inkFilePath, 'utf8');
-    if (inkContent.charCodeAt(0) === 0xFEFF) {
-      inkContent = inkContent.slice(1);
-    }
-
-    // Create compiler with file handler
-    const inkDir = path.dirname(inkFilePath);
-    const fileHandler = new BomStrippingFileHandler(inkDir);
-
-    // Collect errors and warnings from error handler
-    const collectedErrors = [];
-    const collectedWarnings = [];
-
-    const errorHandler = (message, type) => {
-      const formattedMessage = formatError(message);
-      if (type === 'WARNING' || type === 'warning') {
-        collectedWarnings.push(formattedMessage);
-      } else {
-        collectedErrors.push(formattedMessage);
-      }
-    };
-
-    const compiler = new Compiler(inkContent, {
-      sourceFilename: inkFilePath,
-      fileHandler: fileHandler,
-      errorHandler: errorHandler
-    });
-
-    // Compile - this may call errorHandler multiple times
-    let story = null;
-    try {
-      story = compiler.Compile();
-    } catch (compileError) {
-      // Compilation threw an error, but errorHandler should have collected the details
-    }
-
-    // Collect all errors and warnings
-    const allErrors = [...collectedErrors];
-    const allWarnings = [...collectedWarnings];
-
-    // Also check compiler.errors and compiler.warnings arrays
-    if (compiler.errors && compiler.errors.length > 0) {
-      compiler.errors.forEach(error => {
-        allErrors.push(formatError(error));
-      });
-    }
-
-    if (compiler.warnings && compiler.warnings.length > 0) {
-      compiler.warnings.forEach(warning => {
-        allWarnings.push(formatError(warning));
-      });
-    }
-
-    // Check for errors
-    if (allErrors.length > 0) {
-      return {
-        success: false,
-        errors: allErrors,
-        warnings: allWarnings
-      };
-    }
-
-    // Check if story was successfully created
-    if (!story) {
-      return {
-        success: false,
-        errors: ['Compilation failed - no story object created'],
-        warnings: allWarnings
-      };
-    }
-
-    // Extract knots and stitches structure
-    const structure = extractStoryStructure(story);
-
-    // Return success with story info
-    return {
-      success: true,
-      warnings: allWarnings,
-      storyInfo: {
-        canContinue: story.canContinue,
-        choiceCount: story.currentChoices.length,
-        currentTags: story.currentTags,
-        globalTags: story.globalTags
-      },
-      structure: structure
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      errors: [formatError(error)],
-      warnings: []
-    };
-  }
-}
 
 // IPC handler (kept for compatibility)
-ipcMain.handle('compile-ink', async (event, inkFilePath) => {
+ipcMain.handle('compile-ink', async (_event, inkFilePath) => {
   return await compileInk(inkFilePath);
 });
 
@@ -321,6 +100,7 @@ function createMenu() {
   const isMac = process.platform === 'darwin';
 
   // Build Recent Files submenu
+  const recentFiles = recentFilesManager.getAll();
   const recentFilesSubmenu = recentFiles.length > 0
     ? [
         ...recentFiles.map((filePath, index) => ({
@@ -332,8 +112,7 @@ function createMenu() {
         {
           label: 'Clear Recent Files',
           click: () => {
-            recentFiles = [];
-            saveRecentFiles();
+            recentFilesManager.clear();
             createMenu();
           }
         }
@@ -449,14 +228,14 @@ function createMenu() {
 
 app.whenReady().then(() => {
   // Load recent files from disk
-  loadRecentFiles();
+  recentFilesManager.load();
 
   createMenu();
   createWindow();
 
   // Auto-load most recent file after window is ready
   mainWindow.webContents.once('did-finish-load', () => {
-    const mostRecentFile = getMostRecentFile();
+    const mostRecentFile = recentFilesManager.getMostRecent();
     if (mostRecentFile && fs.existsSync(mostRecentFile)) {
       compileAndLogInk(mostRecentFile);
     }

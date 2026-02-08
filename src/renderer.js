@@ -43,17 +43,51 @@ window.api.onCompileResult((result) => {
     `;
     structureOutput.innerHTML = storyInfoHTML;
 
-    // Display knots and stitches in right pane
+    // Display knots and stitches with their exits in right pane
     if (result.structure.knots.length === 0) {
       knotsOutput.innerHTML = '<div class="empty-message">No knots found</div>';
     } else {
-      let knotsHTML = '';
+      let knotsHTML = '<div class="structure-explorer">';
+
       result.structure.knots.forEach(knot => {
-        knotsHTML += `<div class="knot-item">📦 ${knot.name}</div>`;
-        knot.stitches.forEach(stitch => {
-          knotsHTML += `<div class="stitch-item">📎 ${stitch}</div>`;
-        });
+        knotsHTML += `<div class="knot-container">`;
+        knotsHTML += `<div class="knot-header">📦 ${knot.name}</div>`;
+
+        // Show knot exits if any
+        if (knot.exits && knot.exits.length > 0) {
+          knotsHTML += `<div class="exits-container">`;
+          knotsHTML += `<div class="exits-label">Exits:</div>`;
+          knot.exits.forEach(exit => {
+            knotsHTML += `<div class="exit-item">→ ${exit}</div>`;
+          });
+          knotsHTML += `</div>`;
+        }
+
+        // Show stitches with their exits
+        if (knot.stitches && knot.stitches.length > 0) {
+          knotsHTML += `<div class="stitches-container">`;
+          knot.stitches.forEach(stitch => {
+            knotsHTML += `<div class="stitch-container">`;
+            knotsHTML += `<div class="stitch-header">📎 ${stitch.name}</div>`;
+
+            if (stitch.exits && stitch.exits.length > 0) {
+              knotsHTML += `<div class="exits-container">`;
+              knotsHTML += `<div class="exits-label">Exits:</div>`;
+              stitch.exits.forEach(exit => {
+                knotsHTML += `<div class="exit-item">→ ${exit}</div>`;
+              });
+              knotsHTML += `</div>`;
+            }
+
+            knotsHTML += `</div>`;
+          });
+          knotsHTML += `</div>`;
+        }
+
+        knotsHTML += `</div>`;
       });
+
+      knotsHTML += '</div>';
       knotsOutput.innerHTML = knotsHTML;
     }
 

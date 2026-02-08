@@ -81,3 +81,73 @@ body {
   text-align: center;
   padding: 40px;
 }
+
+/* New structure explorer styles */
+.structure-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.knot-container {
+  background: #2d2d30;
+  border-radius: 6px;
+  padding: 12px;
+  border-left: 4px solid #007acc;
+}
+
+.knot-header {
+  font-size: 15px;
+  font-weight: 600;
+  color: #4fc1ff;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.stitches-container {
+  margin-top: 12px;
+  margin-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stitch-container {
+  background: #252526;
+  border-radius: 4px;
+  padding: 10px;
+  border-left: 3px solid #4ec9b0;
+}
+
+.stitch-header {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4ec9b0;
+  margin-bottom: 6px;
+}
+
+.exits-container {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 3px;
+}
+
+.exits-label {
+  font-size: 11px;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.exit-item {
+  padding: 4px 8px;
+  margin: 3px 0;
+  color: #ce9178;
+  font-size: 12px;
+  background: rgba(206, 145, 120, 0.1);
+  border-radius: 3px;
+  border-left: 2px solid #ce9178;
+}
