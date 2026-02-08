@@ -1,0 +1,55 @@
+{
+  "name": "dink-explorer",
+  "version": "0.0.1",
+  "description": "Allows users to explore Dink and Ink files.",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "npm run dev",
+    "build": "check-node-version --node \">=22.12\" && vite build",
+    "clean": "rm -rf dist dist-electron release",
+    "preview": "npm run build && electron .",
+    "dist-mac": "npm run clean && npm run build && electron-builder --mac",
+    "dist-win": "npm run clean && npm run build && electron-builder --win --x64",
+    "dist": "npm run clean && npm run build && electron-builder --mac && electron-builder --win --x64"
+  },
+  "keywords": [
+    "electron"
+  ],
+  "author": "Ian Thomas",
+  "license": "MIT",
+  "devDependencies": {
+    "check-node-version": "^4.2.1",
+    "electron": "^40.2.1",
+    "electron-builder": "^26.7.0",
+    "vite": "^7.3.1",
+    "vite-plugin-electron": "^0.29.0"
+  },
+  "build": {
+    "appId": "net.wildwinter.dinkexplorer",
+    "productName": "DinkExplorer",
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "build/DinkyApp.ico",
+        "to": "DinkyApp.ico"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/DinkyApp.icns",
+      "identity": null
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/DinkyApp.ico"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ]
+  }
+}

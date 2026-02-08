@@ -1,0 +1,42 @@
+import { defineConfig } from 'vite';
+import electron from 'vite-plugin-electron';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [
+    electron([
+      {
+        // Main process entry file
+        entry: 'src/main.js',
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['electron']
+            }
+          }
+        }
+      },
+      {
+        // Preload script
+        entry: 'src/preload.js',
+        onstart(options) {
+          // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete
+          options.reload();
+        },
+        vite: {
+          build: {
+            outDir: 'dist-electron'
+          }
+        }
+      }
+    ])
+  ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true
+  },
+  server: {
+    port: 5173
+  }
+});
