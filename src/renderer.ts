@@ -1,6 +1,16 @@
 // Renderer script - displays Ink compilation results
 
-/// <reference path="./types/api.d.ts" />
+import type { CompilationResult } from './ink/compiler.js';
+import type { StitchInfo } from './ink/analyzer.js';
+
+// Extend Window interface for our API
+declare global {
+  interface Window {
+    api: {
+      onCompileResult: (callback: (result: CompilationResult) => void) => void;
+    };
+  }
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
@@ -85,7 +95,7 @@ function setupCompileResultListener(): void {
           // Show stitches with their exits
           if (knot.stitches && knot.stitches.length > 0) {
             knotsHTML += `<div class="stitches-container">`;
-            knot.stitches.forEach(stitch => {
+            knot.stitches.forEach((stitch: StitchInfo) => {
               knotsHTML += `<div class="stitch-container">`;
               knotsHTML += `<div class="stitch-header">📎 ${escapeHtml(stitch.name)}</div>`;
 

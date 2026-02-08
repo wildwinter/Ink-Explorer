@@ -37,18 +37,18 @@
     },
     "extraResources": [
       {
-        "from": "build/DinkyApp.ico",
-        "to": "DinkyApp.ico"
+        "from": "build/DinkExplorer.ico",
+        "to": "DinkExplorer.ico"
       }
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "build/DinkyApp.icns",
+      "icon": "build/DinkExplorer.icns",
       "identity": null
     },
     "win": {
       "target": "nsis",
-      "icon": "build/DinkyApp.ico"
+      "icon": "build/DinkExplorer.ico"
     },
     "files": [
       "dist/**/*",
