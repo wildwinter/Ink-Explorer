@@ -12,13 +12,16 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['electron']
+              external: ['electron', 'fs', 'path', 'url', 'inkjs/compiler/Compiler'],
+              output: {
+                format: 'es'
+              }
             }
           }
         }
       },
       {
-        // Preload script
+        // Preload script - must be CommonJS for Electron sandbox
         entry: 'src/preload.js',
         onstart(options) {
           // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete
@@ -26,7 +29,13 @@ export default defineConfig({
         },
         vite: {
           build: {
-            outDir: 'dist-electron'
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['electron'],
+              output: {
+                format: 'cjs'
+              }
+            }
           }
         }
       }

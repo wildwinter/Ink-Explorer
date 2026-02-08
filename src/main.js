@@ -1,7 +1,85 @@
-const { app, BrowserWindow, Menu } = require('electron');
-const path = require('path');
+import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { Compiler } from 'inkjs/compiler/Compiler';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let mainWindow;
+
+// File handler that strips BOM from ink files
+class BomStrippingFileHandler {
+  constructor(rootPath) {
+    this.rootPath = rootPath;
+  }
+
+  ResolveInkFilename(includeName) {
+    return path.resolve(this.rootPath, includeName);
+  }
+
+  LoadInkFileContents(fullFilename) {
+    let content = fs.readFileSync(fullFilename, 'utf8');
+    if (content.charCodeAt(0) === 0xFEFF) {
+      content = content.slice(1);
+    }
+    return content;
+  }
+}
+
+// IPC handler for Ink compilation
+ipcMain.handle('compile-ink', async (event, inkFilePath) => {
+  try {
+    // Read the main ink file
+    let inkContent = fs.readFileSync(inkFilePath, 'utf8');
+    if (inkContent.charCodeAt(0) === 0xFEFF) {
+      inkContent = inkContent.slice(1);
+    }
+
+    // Create compiler with file handler
+    const inkDir = path.dirname(inkFilePath);
+    const fileHandler = new BomStrippingFileHandler(inkDir);
+    const errorHandler = (message, type) => {};
+
+    const compiler = new Compiler(inkContent, {
+      sourceFilename: inkFilePath,
+      fileHandler: fileHandler,
+      errorHandler: errorHandler
+    });
+
+    // Compile
+    const story = compiler.Compile();
+
+    // Check for errors
+    if (compiler.errors.length > 0) {
+      return {
+        success: false,
+        errors: compiler.errors,
+        warnings: compiler.warnings
+      };
+    }
+
+    // Return success with story info
+    return {
+      success: true,
+      warnings: compiler.warnings,
+      storyInfo: {
+        canContinue: story.canContinue,
+        choiceCount: story.currentChoices.length,
+        currentTags: story.currentTags,
+        globalTags: story.globalTags
+      }
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      errors: [error.message],
+      warnings: []
+    };
+  }
+});
 
 // Check if we're in development mode
 const isDev = !app.isPackaged;

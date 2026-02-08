@@ -1,10 +1,13 @@
 // Preload script for secure context isolation
 // This script runs before the renderer process loads
 // Use this to expose safe APIs to the renderer process
+// Note: Preload scripts must use CommonJS for Electron's sandbox
 
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
-// Example: Expose a safe API to the renderer
-// contextBridge.exposeInMainWorld('api', {
-//   // Add your safe API methods here
-// });
+// Expose IPC API to renderer for Ink compilation
+contextBridge.exposeInMainWorld('api', {
+  compileInk: (inkFilePath) => {
+    return ipcRenderer.invoke('compile-ink', inkFilePath);
+  }
+});

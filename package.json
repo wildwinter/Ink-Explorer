@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Allows users to explore Dink and Ink files.",
   "main": "dist-electron/main.js",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "start": "npm run dev",
@@ -11,7 +12,8 @@
     "preview": "npm run build && electron .",
     "dist-mac": "npm run clean && npm run build && electron-builder --mac",
     "dist-win": "npm run clean && npm run build && electron-builder --win --x64",
-    "dist": "npm run clean && npm run build && electron-builder --mac && electron-builder --win --x64"
+    "dist": "npm run clean && npm run build && electron-builder --mac && electron-builder --win --x64",
+    "test:ink": "node scripts/testInk.js"
   },
   "keywords": [
     "electron"
@@ -51,5 +53,8 @@
       "dist-electron/**/*",
       "package.json"
     ]
+  },
+  "dependencies": {
+    "inkjs": "^2.3.2"
   }
 }
