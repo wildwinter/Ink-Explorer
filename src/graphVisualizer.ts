@@ -235,9 +235,90 @@ export function createGraphVisualization(
   let containers: d3.Selection<SVGRectElement, any, SVGGElement, unknown>;
   let node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>;
 
+  // Helper function to check if a knot has stitches
+  const knotHasStitches = (knotId: string): boolean => {
+    return fullGraph.nodes.some(n => n.type === 'stitch' && n.knotName === knotId);
+  };
+
+  // Function to compute hierarchical positions (left-to-right based on story flow)
+  function computeHierarchicalPositions(graph: Graph) {
+    // Build adjacency map
+    const adjacency = new Map<string, Set<string>>();
+    graph.nodes.forEach(n => adjacency.set(n.id, new Set()));
+
+    graph.links.forEach(link => {
+      const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
+      const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+      adjacency.get(sourceId)?.add(targetId);
+    });
+
+    // Compute depth (distance from start) for each node using BFS
+    const depths = new Map<string, number>();
+    const visited = new Set<string>();
+    const queue: Array<{ id: string; depth: number }> = [];
+
+    // Start with the first knot in the structure (assume it's the entry point)
+    if (graph.nodes.length > 0) {
+      const firstKnot = graph.nodes.find(n => n.type === 'knot');
+      if (firstKnot) {
+        queue.push({ id: firstKnot.id, depth: 0 });
+        visited.add(firstKnot.id);
+        depths.set(firstKnot.id, 0);
+      }
+    }
+
+    // BFS to assign depths
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift()!;
+      const neighbors = adjacency.get(id);
+
+      if (neighbors) {
+        for (const neighborId of neighbors) {
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            depths.set(neighborId, depth + 1);
+            queue.push({ id: neighborId, depth: depth + 1 });
+          }
+        }
+      }
+    }
+
+    // Assign positions to any unvisited nodes
+    graph.nodes.forEach(n => {
+      if (!depths.has(n.id)) {
+        depths.set(n.id, 0);
+      }
+    });
+
+    // Position nodes based on depth
+    const depthSpacing = 300;
+    const verticalSpacing = 150;
+
+    // Group nodes by depth
+    const nodesByDepth = new Map<number, GraphNode[]>();
+    graph.nodes.forEach(n => {
+      const depth = depths.get(n.id) || 0;
+      if (!nodesByDepth.has(depth)) {
+        nodesByDepth.set(depth, []);
+      }
+      nodesByDepth.get(depth)!.push(n);
+    });
+
+    // Assign x,y positions
+    nodesByDepth.forEach((nodes, depth) => {
+      nodes.forEach((node, index) => {
+        node.x = width * 0.15 + depth * depthSpacing;
+        node.y = height / 2 + (index - (nodes.length - 1) / 2) * verticalSpacing;
+      });
+    });
+  }
+
   // Function to update the visualization
   function updateVisualization() {
     const visibleGraph = computeVisibleGraph(fullGraph);
+
+    // Compute hierarchical positions
+    computeHierarchicalPositions(visibleGraph);
 
     // Group nodes by knot for containment
     const knotGroups = new Map<string, GraphNode[]>();
@@ -262,13 +343,14 @@ export function createGraphVisualization(
       simulation.stop();
     }
 
-    // Create new force simulation
+    // Create a minimal force simulation for maintaining link structure
+    // but with animation disabled
     simulation = d3.forceSimulation(visibleGraph.nodes as any)
       .force('link', d3.forceLink(visibleGraph.links as any)
         .id((d: any) => d.id)
-        .distance(150))
-      .force('charge', d3.forceManyBody().strength(-800))
-      .force('center', d3.forceCenter(width / 2, height / 2))
+        .distance(150)
+        .strength(0.3))
+      .force('charge', d3.forceManyBody().strength(-300))
       .force('collision', d3.forceCollide().radius(50))
       .force('stitch-containment', () => {
         // Keep stitches close to their parent knot
@@ -276,14 +358,62 @@ export function createGraphVisualization(
           if (n.type === 'stitch' && n.knotName) {
             const parent = visibleGraph.nodes.find(p => p.id === n.knotName);
             if (parent && parent.x !== undefined && parent.y !== undefined) {
-              const dx = (parent.x - (n.x || 0)) * 0.1;
-              const dy = (parent.y - (n.y || 0)) * 0.1;
+              const dx = (parent.x - (n.x || 0)) * 0.2;
+              const dy = (parent.y - (n.y || 0)) * 0.2;
               n.x = (n.x || 0) + dx;
               n.y = (n.y || 0) + dy;
             }
           }
         });
+      })
+      .alphaDecay(0.5) // Fast decay
+      .velocityDecay(0.8) // High friction
+      .alpha(0.3) // Start with low energy
+      .alphaMin(0.001); // Stop quickly
+
+    // Run a few ticks then stop to get a stable layout without animation
+    simulation.tick(50);
+    simulation.stop();
+
+    // Function to render positions
+    const renderPositions = () => {
+      // Update links
+      link
+        .attr('x1', (d: any) => d.source.x)
+        .attr('y1', (d: any) => d.source.y)
+        .attr('x2', (d: any) => d.target.x)
+        .attr('y2', (d: any) => d.target.y);
+
+      // Update nodes
+      node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+
+      // Update knot containers to encompass their stitches
+      containers.each(function(d: any) {
+        const knotNode = visibleGraph.nodes.find(n => n.id === d.knotId);
+        if (!knotNode || knotNode.x === undefined || knotNode.y === undefined) return;
+
+        const stitches = d.stitches;
+        if (stitches.length === 0) {
+          return;
+        }
+
+        // Calculate bounding box for knot and its stitches
+        const allNodes = [knotNode, ...stitches];
+        const xs = allNodes.map(n => n.x || 0);
+        const ys = allNodes.map(n => n.y || 0);
+
+        const minX = Math.min(...xs) - 50;
+        const maxX = Math.max(...xs) + 50;
+        const minY = Math.min(...ys) - 50;
+        const maxY = Math.max(...ys) + 50;
+
+        d3.select(this)
+          .attr('x', minX)
+          .attr('y', minY)
+          .attr('width', maxX - minX)
+          .attr('height', maxY - minY);
       });
+    };
 
     // Update links
     link = linksLayer
@@ -358,8 +488,8 @@ export function createGraphVisualization(
             .attr('font-size', d => d.type === 'knot' ? '18px' : '14px')
             .style('pointer-events', 'none');
 
-          // Add collapse indicator (only for knots)
-          nodeEnter.filter(d => d.type === 'knot')
+          // Add collapse indicator (only for knots with stitches)
+          nodeEnter.filter(d => d.type === 'knot' && knotHasStitches(d.id))
             .append('text')
             .attr('class', 'collapse-indicator')
             .attr('x', 20)
@@ -372,8 +502,8 @@ export function createGraphVisualization(
           // Add tooltip
           nodeEnter.append('title');
 
-          // Add click handler for knots to toggle collapse
-          nodeEnter.filter(d => d.type === 'knot')
+          // Add click handler for knots with stitches to toggle collapse
+          nodeEnter.filter(d => d.type === 'knot' && knotHasStitches(d.id))
             .on('click', function(event, d) {
               event.stopPropagation();
               d.collapsed = !d.collapsed;
@@ -400,52 +530,22 @@ export function createGraphVisualization(
       .attr('fill', '#ecf0f1');
 
     node.select('title')
-      .text(d => `${d.type === 'knot' ? 'Knot' : 'Stitch'}: ${d.id}${d.type === 'knot' ? ' (click to ' + (d.collapsed ? 'expand' : 'collapse') + ')' : ''}`);
-
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      // Update links
-      link
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
-
-      // Update nodes
-      node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-
-      // Update knot containers to encompass their stitches
-      containers.each(function(d: any) {
-        const knotNode = visibleGraph.nodes.find(n => n.id === d.knotId);
-        if (!knotNode || knotNode.x === undefined || knotNode.y === undefined) return;
-
-        const stitches = d.stitches;
-        if (stitches.length === 0) {
-          return;
+      .text(d => {
+        if (d.type === 'knot' && knotHasStitches(d.id)) {
+          return `Knot: ${d.id} (click to ${d.collapsed ? 'expand' : 'collapse'})`;
+        } else if (d.type === 'knot') {
+          return `Knot: ${d.id}`;
+        } else {
+          return `Stitch: ${d.id}`;
         }
-
-        // Calculate bounding box for knot and its stitches
-        const allNodes = [knotNode, ...stitches];
-        const xs = allNodes.map(n => n.x || 0);
-        const ys = allNodes.map(n => n.y || 0);
-
-        const minX = Math.min(...xs) - 50;
-        const maxX = Math.max(...xs) + 50;
-        const minY = Math.min(...ys) - 50;
-        const maxY = Math.max(...ys) + 50;
-
-        d3.select(this)
-          .attr('x', minX)
-          .attr('y', minY)
-          .attr('width', maxX - minX)
-          .attr('height', maxY - minY);
       });
-    });
+
+    // Render the final positions (no animation)
+    renderPositions();
   }
 
-  // Drag functions
+  // Drag functions (no animation, just direct position updates)
   function dragStarted(event: any) {
-    if (!event.active) simulation.alphaTarget(0.3).restart();
     event.subject.fx = event.subject.x;
     event.subject.fy = event.subject.y;
   }
@@ -453,10 +553,26 @@ export function createGraphVisualization(
   function dragged(event: any) {
     event.subject.fx = event.x;
     event.subject.fy = event.y;
+    event.subject.x = event.x;
+    event.subject.y = event.y;
+
+    // Manually update the visual position
+    d3.select(event.sourceEvent.target.parentNode)
+      .attr('transform', `translate(${event.x},${event.y})`);
+
+    // Update connected links
+    link.each(function(d: any) {
+      if (d.source === event.subject || d.target === event.subject) {
+        d3.select(this)
+          .attr('x1', d.source.x)
+          .attr('y1', d.source.y)
+          .attr('x2', d.target.x)
+          .attr('y2', d.target.y);
+      }
+    });
   }
 
   function dragEnded(event: any) {
-    if (!event.active) simulation.alphaTarget(0);
     event.subject.fx = null;
     event.subject.fy = null;
   }
