@@ -12,6 +12,7 @@ import path from 'path';
  */
 export class BomStrippingFileHandler {
   private rootPath: string;
+  public loadedFiles: Map<string, string> = new Map();
 
   constructor(rootPath: string) {
     this.rootPath = rootPath;
@@ -37,6 +38,11 @@ export class BomStrippingFileHandler {
     if (content.charCodeAt(0) === 0xFEFF) {
       content = content.slice(1);
     }
+
+    // Track loaded file and its content
+    const filename = path.basename(fullFilename);
+    this.loadedFiles.set(filename, content);
+
     return content;
   }
 }

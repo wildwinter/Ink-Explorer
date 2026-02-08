@@ -17,6 +17,7 @@ export interface CompilationResult {
   warnings: string[];
   storyInfo?: StoryInfo;
   structure?: StoryStructure;
+  sourceFiles?: Map<string, string>; // filename -> content
 }
 
 /**
@@ -33,6 +34,10 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
     // Create compiler with file handler
     const inkDir = path.dirname(inkFilePath);
     const fileHandler = new BomStrippingFileHandler(inkDir);
+
+    // Track the main file
+    const mainFilename = path.basename(inkFilePath);
+    fileHandler.loadedFiles.set(mainFilename, inkContent);
 
     // Create error handler
     const errorHandling = createErrorHandler();
@@ -90,12 +95,13 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
     const storyInfo = extractStoryInfo(story);
     const structure = extractStoryStructure(story);
 
-    // Return success with story info
+    // Return success with story info and source files
     return {
       success: true,
       warnings: allWarnings,
       storyInfo,
-      structure
+      structure,
+      sourceFiles: fileHandler.loadedFiles
     };
 
   } catch (error) {

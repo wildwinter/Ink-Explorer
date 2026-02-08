@@ -53,12 +53,31 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
     if (obj.constructor && obj.constructor.name === 'Divert') {
       const targetPath = obj.targetPath;
       if (targetPath) {
-        diverts.push({
-          source: path.join('.') || 'root',
-          target: targetPath.componentsString || targetPath.toString(),
-          isConditional: obj.hasCondition || false,
-          isFunctionCall: obj.pushesToStack || false
-        });
+        const targetString = targetPath.componentsString || targetPath.toString();
+
+        // Filter out implicit/internal diverts
+        // Valid story diverts target knots or stitches (e.g., "MyKnot" or "MyKnot.MyStitch")
+        // Invalid paths contain numeric indices or sequence identifiers (e.g., "Scene1.Part2.0.5.s0")
+        // Check each component of the path to ensure it's a valid identifier
+        const pathComponents = targetString.split('.');
+        const isValidTarget = targetString &&
+          targetString.length > 0 &&
+          !targetString.startsWith('__') && // Not internal naming
+          pathComponents.every((component: string) => {
+            // Each component should be a valid identifier (letters, numbers, underscores)
+            // but NOT just numbers, and NOT sequence identifiers like "s0", "s1"
+            return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(component) && // Valid identifier format
+                   !/^s\d+$/.test(component); // Not a sequence identifier (s0, s1, s2, etc.)
+          });
+
+        if (isValidTarget) {
+          diverts.push({
+            source: path.join('.') || 'root',
+            target: targetString,
+            isConditional: obj.hasCondition || false,
+            isFunctionCall: obj.pushesToStack || false
+          });
+        }
       }
     }
 
@@ -97,7 +116,9 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
       });
     }
 
-    // Traverse conditional branches
+    // Traverse all branches (conditionals AND sequences)
+    // Sequences can contain explicit diverts (e.g., {shuffle: - Text -> Target })
+    // We filter out implicit diverts at the Divert object level instead
     if (obj.branches && Array.isArray(obj.branches)) {
       obj.branches.forEach((branch: unknown) => {
         diverts.push(...findDiverts(branch, path));

@@ -11,6 +11,10 @@ interface GraphNode {
   label: string;
   type: 'knot' | 'stitch';
   knotName?: string; // For stitches, track which knot they belong to
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
 interface GraphLink {
@@ -148,17 +152,60 @@ export function createGraphVisualization(
     .attr('d', 'M0,-5L10,0L0,5')
     .attr('fill', d => d === 'arrow-conditional' ? '#f39c12' : '#95a5a6');
 
-  // Create force simulation
+  // Group nodes by knot for containment
+  const knotGroups = new Map<string, GraphNode[]>();
+  const knotNodes: GraphNode[] = [];
+
+  graph.nodes.forEach(node => {
+    if (node.type === 'knot') {
+      knotNodes.push(node);
+      knotGroups.set(node.id, []);
+    }
+  });
+
+  graph.nodes.forEach(node => {
+    if (node.type === 'stitch' && node.knotName) {
+      const stitches = knotGroups.get(node.knotName);
+      if (stitches) {
+        stitches.push(node);
+      }
+    }
+  });
+
+  // Create force simulation with containment
   const simulation = d3.forceSimulation(graph.nodes as any)
     .force('link', d3.forceLink(graph.links as any)
       .id((d: any) => d.id)
-      .distance(100))
-    .force('charge', d3.forceManyBody().strength(-500))
+      .distance(150))
+    .force('charge', d3.forceManyBody().strength(-800))
     .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(40));
+    .force('collision', d3.forceCollide().radius(50))
+    .force('stitch-containment', () => {
+      // Keep stitches close to their parent knot
+      graph.nodes.forEach(node => {
+        if (node.type === 'stitch' && node.knotName) {
+          const parent = graph.nodes.find(n => n.id === node.knotName);
+          if (parent && parent.x !== undefined && parent.y !== undefined) {
+            const dx = (parent.x - (node.x || 0)) * 0.1;
+            const dy = (parent.y - (node.y || 0)) * 0.1;
+            node.x = (node.x || 0) + dx;
+            node.y = (node.y || 0) + dy;
+          }
+        }
+      });
+    });
+
+  // Create container layer for knot groups
+  const knotContainers = g.append('g').attr('class', 'knot-containers');
+
+  // Create links layer
+  const linksLayer = g.append('g').attr('class', 'links');
+
+  // Create nodes layer
+  const nodesLayer = g.append('g').attr('class', 'nodes');
 
   // Create links
-  const link = g.append('g')
+  const link = linksLayer
     .selectAll('line')
     .data(graph.links)
     .join('line')
@@ -167,11 +214,29 @@ export function createGraphVisualization(
     .attr('stroke-opacity', 0.6)
     .attr('marker-end', d => `url(#${d.isConditional ? 'arrow-conditional' : 'arrow'})`);
 
+  // Create knot container rectangles
+  const knotContainerData = Array.from(knotGroups.entries()).map(([knotId, stitches]) => ({
+    knotId,
+    stitches
+  }));
+
+  const containers = knotContainers
+    .selectAll('rect')
+    .data(knotContainerData)
+    .join('rect')
+    .attr('class', 'knot-container')
+    .attr('fill', 'rgba(52, 152, 219, 0.1)')
+    .attr('stroke', '#3498db')
+    .attr('stroke-width', 2)
+    .attr('stroke-dasharray', '5,5')
+    .attr('rx', 10);
+
   // Create nodes
-  const node = g.append('g')
+  const node = nodesLayer
     .selectAll('g')
     .data(graph.nodes)
     .join('g')
+    .attr('class', d => `node-${d.type}`)
     .call(d3.drag<any, any>()
       .on('start', dragStarted)
       .on('drag', dragged)
@@ -179,7 +244,7 @@ export function createGraphVisualization(
 
   // Add circles for nodes
   node.append('circle')
-    .attr('r', 20)
+    .attr('r', d => d.type === 'knot' ? 25 : 18)
     .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71')
     .attr('stroke', '#ecf0f1')
     .attr('stroke-width', 2)
@@ -189,11 +254,11 @@ export function createGraphVisualization(
   node.append('text')
     .text(d => d.label)
     .attr('x', 0)
-    .attr('y', -25)
+    .attr('y', d => d.type === 'knot' ? -30 : -23)
     .attr('text-anchor', 'middle')
     .attr('fill', '#ecf0f1')
-    .attr('font-size', '12px')
-    .attr('font-weight', 'bold')
+    .attr('font-size', d => d.type === 'knot' ? '13px' : '11px')
+    .attr('font-weight', d => d.type === 'knot' ? 'bold' : 'normal')
     .style('pointer-events', 'none')
     .style('user-select', 'none');
 
@@ -203,7 +268,7 @@ export function createGraphVisualization(
     .attr('x', 0)
     .attr('y', 5)
     .attr('text-anchor', 'middle')
-    .attr('font-size', '16px')
+    .attr('font-size', d => d.type === 'knot' ? '18px' : '14px')
     .style('pointer-events', 'none');
 
   // Add tooltips
@@ -212,13 +277,47 @@ export function createGraphVisualization(
 
   // Update positions on simulation tick
   simulation.on('tick', () => {
+    // Update links
     link
       .attr('x1', (d: any) => d.source.x)
       .attr('y1', (d: any) => d.source.y)
       .attr('x2', (d: any) => d.target.x)
       .attr('y2', (d: any) => d.target.y);
 
+    // Update nodes
     node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+
+    // Update knot containers to encompass their stitches
+    containers.each(function(d: any) {
+      const knotNode = graph.nodes.find(n => n.id === d.knotId);
+      if (!knotNode || knotNode.x === undefined || knotNode.y === undefined) return;
+
+      const stitches = d.stitches;
+      if (stitches.length === 0) {
+        // No stitches, just draw around the knot
+        d3.select(this)
+          .attr('x', knotNode.x - 60)
+          .attr('y', knotNode.y - 60)
+          .attr('width', 120)
+          .attr('height', 120);
+      } else {
+        // Calculate bounding box for knot and its stitches
+        const allNodes = [knotNode, ...stitches];
+        const xs = allNodes.map(n => n.x || 0);
+        const ys = allNodes.map(n => n.y || 0);
+
+        const minX = Math.min(...xs) - 50;
+        const maxX = Math.max(...xs) + 50;
+        const minY = Math.min(...ys) - 50;
+        const maxY = Math.max(...ys) + 50;
+
+        d3.select(this)
+          .attr('x', minX)
+          .attr('y', minY)
+          .attr('width', maxX - minX)
+          .attr('height', maxY - minY);
+      }
+    });
   });
 
   // Add zoom behavior
