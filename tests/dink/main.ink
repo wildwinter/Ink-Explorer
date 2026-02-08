@@ -90,3 +90,12 @@ FRED: Glad that's over with! #id:main_TestScene_IQIS
 - FRED: Wow this is annoying! #id:main_Barks_N07F
 }
 -> Main
+
+=== Cupboard
+= Test1
+This is a test element.
+-> DONE
+
+= Test2
+This is a test element as well.
+-> DONE

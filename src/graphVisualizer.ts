@@ -139,10 +139,9 @@ export function createGraphVisualization(
   const g = svg.append('g');
 
   // Define arrow marker for directed edges
-  svg.append('defs').selectAll('marker')
-    .data(['arrow', 'arrow-conditional'])
-    .join('marker')
-    .attr('id', d => d)
+  svg.append('defs')
+    .append('marker')
+    .attr('id', 'arrow')
     .attr('viewBox', '0 -5 10 10')
     .attr('refX', 9)
     .attr('refY', 0)
@@ -151,7 +150,7 @@ export function createGraphVisualization(
     .attr('orient', 'auto')
     .append('path')
     .attr('d', 'M0,-5L10,0L0,5')
-    .attr('fill', d => d === 'arrow-conditional' ? '#f39c12' : '#95a5a6');
+    .attr('fill', '#95a5a6');
 
   // Create layers
   const linksLayer = g.append('g').attr('class', 'links');
@@ -584,11 +583,29 @@ export function createGraphVisualization(
             const xDist = Math.abs(knotNode.x - otherKnot.x);
             const yDist = Math.abs(knotNode.y - otherKnot.y);
 
+            // Check if current knot overlaps with other knot
             if (xDist < 120 && yDist < 60) {
               // Same position, offset vertically with larger spacing
               hasConflict = true;
               knotNode.y += 150;
               break;
+            }
+
+            // Check if current knot overlaps with other knot's stitches
+            const otherStitches = knotGroups.get(otherKnot.id) || [];
+            if (otherStitches.length > 0) {
+              // Get bounds of other knot's stitches
+              const stitchYs = otherStitches.map(s => s.y || 0);
+              const minStitchY = Math.min(...stitchYs, otherKnot.y);
+              const maxStitchY = Math.max(...stitchYs, otherKnot.y);
+
+              // Check if current knot is in the vertical range of the stitches
+              if (xDist < 150 && knotNode.y >= minStitchY - 60 && knotNode.y <= maxStitchY + 60) {
+                // Current knot is in range of other knot's stitches, offset it
+                hasConflict = true;
+                knotNode.y = maxStitchY + 80;
+                break;
+              }
             }
           }
 
@@ -707,6 +724,9 @@ export function createGraphVisualization(
     const needsLayout = !graph.nodes.every(n => n.type === 'stitch' || (n.x !== undefined && n.y !== undefined));
     if (needsLayout) {
       computeHierarchicalPositions(graph, knotGroups);
+
+      // After initial layout, zoom to fit the entire graph
+      zoomToFit();
     }
 
     // Stop existing simulation if any
@@ -806,10 +826,10 @@ export function createGraphVisualization(
         return `${sourceId}-${targetId}`;
       })
       .join('line')
-      .attr('stroke', d => d.isConditional ? '#f39c12' : '#95a5a6')
+      .attr('stroke', '#95a5a6')
       .attr('stroke-width', 2)
       .attr('stroke-opacity', 0.6)
-      .attr('marker-end', d => `url(#${d.isConditional ? 'arrow-conditional' : 'arrow'})`);
+      .attr('marker-end', 'url(#arrow)');
 
     // Update nodes
     node = nodesLayer
@@ -959,17 +979,67 @@ export function createGraphVisualization(
 
   svg.call(zoom as any);
 
+  // Function to zoom to fit all nodes in view
+  function zoomToFit() {
+    if (graph.nodes.length === 0) return;
+
+    // Calculate bounds of all nodes
+    const padding = 50; // Padding around the graph
+    const nodeDims = { width: 100, height: 50 };
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    graph.nodes.forEach(n => {
+      if (n.x !== undefined && n.y !== undefined) {
+        minX = Math.min(minX, n.x - nodeDims.width / 2);
+        maxX = Math.max(maxX, n.x + nodeDims.width / 2);
+        minY = Math.min(minY, n.y - nodeDims.height / 2);
+        maxY = Math.max(maxY, n.y + nodeDims.height / 2);
+      }
+    });
+
+    // Add padding
+    minX -= padding;
+    maxX += padding;
+    minY -= padding;
+    maxY += padding;
+
+    const graphWidth = maxX - minX;
+    const graphHeight = maxY - minY;
+
+    // Calculate scale to fit
+    const scale = Math.min(
+      width / graphWidth,
+      height / graphHeight,
+      4 // Max zoom level
+    );
+
+    // Calculate translation to center the graph
+    const translateX = (width - graphWidth * scale) / 2 - minX * scale;
+    const translateY = (height - graphHeight * scale) / 2 - minY * scale;
+
+    // Apply the transform
+    const transform = d3.zoomIdentity
+      .translate(translateX, translateY)
+      .scale(scale);
+
+    svg.transition()
+      .duration(750)
+      .call(zoom.transform as any, transform);
+  }
+
   // Add legend
   const legend = svg.append('g')
     .attr('class', 'legend')
-    .attr('transform', `translate(20, ${height - 80})`);
+    .attr('transform', `translate(20, ${height - 60})`);
 
   // Legend background
   legend.append('rect')
     .attr('x', -10)
     .attr('y', -10)
     .attr('width', 150)
-    .attr('height', 70)
+    .attr('height', 50)
     .attr('fill', 'rgba(30, 30, 30, 0.8)')
     .attr('rx', 5);
 
@@ -1010,22 +1080,6 @@ export function createGraphVisualization(
     .attr('fill', '#ecf0f1')
     .attr('font-size', '11px')
     .text('Stitch');
-
-  // Conditional divert legend
-  legend.append('line')
-    .attr('x1', 0)
-    .attr('y1', 50)
-    .attr('x2', 30)
-    .attr('y2', 50)
-    .attr('stroke', '#f39c12')
-    .attr('stroke-width', 2);
-
-  legend.append('text')
-    .attr('x', 35)
-    .attr('y', 55)
-    .attr('fill', '#ecf0f1')
-    .attr('font-size', '11px')
-    .text('Conditional');
 
   // Initial render
   updateVisualization();
