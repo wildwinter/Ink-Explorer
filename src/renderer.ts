@@ -1,7 +1,6 @@
 // Renderer script - displays Ink compilation results
 
 import type { CompilationResult } from './ink/compiler.js';
-import type { StitchInfo } from './ink/analyzer.js';
 import { createGraphVisualization } from './graphVisualizer.js';
 import type { GraphController } from './graphVisualizer.js';
 import { highlightInkSyntax } from './syntaxHighlighter.js';
@@ -35,6 +34,9 @@ let liveInkIsDinkMode = false;
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
   showEmptyState();
+
+  // Suppress Electron's native context menu (we use our own on graph nodes)
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // Set up close button for code pane
   const closeBtn = document.getElementById('code-pane-close');
@@ -132,9 +134,9 @@ function showEmptyState(): void {
   // Show empty state in tabs
   createTabs([
     {
-      id: 'structure',
-      label: 'Structure',
-      content: '<div class="empty-message">No Ink file loaded</div>',
+      id: 'live-ink',
+      label: 'Live Ink',
+      content: LIVE_INK_HTML,
       type: 'html'
     }
   ]);
@@ -444,6 +446,14 @@ function continueLiveInk(): void {
   while (liveInkStory.canContinue) {
     const text = liveInkStory.Continue();
     if (!text) continue;
+
+    // Detect dink mode dynamically from knot/line tags
+    if (!liveInkIsDinkMode && liveInkStory.currentTags) {
+      if (liveInkStory.currentTags.some((tag: string) => tag.trim() === 'dink')) {
+        liveInkIsDinkMode = true;
+      }
+    }
+
     const p = document.createElement('p');
 
     if (liveInkIsDinkMode) {
@@ -609,54 +619,6 @@ function setupCompileResultListener(): void {
         initialSelectedNodeId: savedState?.selectedNodeId
       });
 
-      // Build structure tab content
-      let structureHTML = '';
-      if (result.structure.knots.length === 0) {
-        structureHTML = '<div class="empty-message">No knots found</div>';
-      } else {
-        structureHTML = '<div class="structure-explorer">';
-
-        result.structure.knots.forEach(knot => {
-          structureHTML += `<div class="knot-container">`;
-          structureHTML += `<div class="knot-header">📦 ${escapeHtml(knot.name)}</div>`;
-
-          // Show knot exits if any
-          if (knot.exits && knot.exits.length > 0) {
-            structureHTML += `<div class="exits-container">`;
-            structureHTML += `<div class="exits-label">Exits:</div>`;
-            knot.exits.forEach(exit => {
-              structureHTML += `<div class="exit-item">→ ${escapeHtml(exit)}</div>`;
-            });
-            structureHTML += `</div>`;
-          }
-
-          // Show stitches with their exits
-          if (knot.stitches && knot.stitches.length > 0) {
-            structureHTML += `<div class="stitches-container">`;
-            knot.stitches.forEach((stitch: StitchInfo) => {
-              structureHTML += `<div class="stitch-container">`;
-              structureHTML += `<div class="stitch-header">📎 ${escapeHtml(stitch.name)}</div>`;
-
-              if (stitch.exits && stitch.exits.length > 0) {
-                structureHTML += `<div class="exits-container">`;
-                structureHTML += `<div class="exits-label">Exits:</div>`;
-                stitch.exits.forEach(exit => {
-                  structureHTML += `<div class="exit-item">→ ${escapeHtml(exit)}</div>`;
-                });
-                structureHTML += `</div>`;
-              }
-
-              structureHTML += `</div>`;
-            });
-            structureHTML += `</div>`;
-          }
-
-          structureHTML += `</div>`;
-        });
-
-        structureHTML += '</div>';
-      }
-
       // Store story JSON for Live Ink
       const ipcAny = result as any;
       currentStoryJson = ipcAny.storyJson || null;
@@ -665,12 +627,6 @@ function setupCompileResultListener(): void {
 
       // Create tabs
       createTabs([
-        {
-          id: 'structure',
-          label: 'Structure',
-          content: structureHTML,
-          type: 'html'
-        },
         {
           id: 'live-ink',
           label: 'Live Ink',
@@ -705,9 +661,9 @@ function setupCompileResultListener(): void {
 
       createTabs([
         {
-          id: 'structure',
-          label: 'Structure',
-          content: '<div class="empty-message">Fix compilation errors to view structure</div>',
+          id: 'live-ink',
+          label: 'Live Ink',
+          content: LIVE_INK_HTML,
           type: 'html'
         }
       ]);
