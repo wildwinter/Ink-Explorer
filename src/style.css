@@ -151,6 +151,20 @@ body {
   font-style: italic;
 }
 
+/* Ink/Dink syntax highlighting (colours match Dinky editor themes) */
+.ink-comment { color: #6A9955; }
+.ink-knot { color: #4EC9B0; font-weight: bold; }
+.ink-stitch { color: #4EC9B0; }
+.ink-divert { color: #569CD6; }
+.ink-choice { color: #569CD6; font-weight: bold; }
+.ink-gather { color: #569CD6; }
+.ink-code { color: #C586C0; }
+.ink-tag { color: #CE9178; }
+.ink-dink-name { color: #D7BA7D; font-weight: bold; }
+.ink-dink-qual { color: #6A9955; font-style: italic; }
+.ink-dink-dir { color: #569CD6; font-style: italic; }
+.ink-dink-text { color: #9CDCFE; }
+
 /* New structure explorer styles */
 .structure-explorer {
   display: flex;

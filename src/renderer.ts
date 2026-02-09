@@ -4,6 +4,7 @@ import type { CompilationResult } from './ink/compiler.js';
 import type { StitchInfo } from './ink/analyzer.js';
 import { createGraphVisualization } from './graphVisualizer.js';
 import type { GraphController } from './graphVisualizer.js';
+import { highlightInkSyntax } from './syntaxHighlighter.js';
 
 // Extend Window interface for our API
 declare global {
@@ -207,7 +208,7 @@ function showCodePane(title: string, source: string): void {
   if (!pane || !titleEl || !sourceEl) return;
 
   titleEl.textContent = title;
-  sourceEl.textContent = source;
+  sourceEl.innerHTML = highlightInkSyntax(source);
   pane.style.display = 'flex';
 }
 

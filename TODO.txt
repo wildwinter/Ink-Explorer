@@ -1,5 +1,4 @@
 TODO:
-Syntax colouring.
 Remove icons.
 Themes
 Test different include paths.
@@ -25,3 +24,4 @@ Maintain window position and layout.
 Maintain window and focused node per starting file.
 Position unconnected groups further away.
 Add minimap.
+Syntax colouring.
