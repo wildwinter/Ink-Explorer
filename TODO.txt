@@ -24,3 +24,4 @@ BUG: Doesn't show included Ink file content.
 Maintain window position and layout.
 Maintain window and focused node per starting file.
 Position unconnected groups further away.
+Add minimap.

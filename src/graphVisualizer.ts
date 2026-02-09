@@ -177,6 +177,10 @@ export function createGraphVisualization(
   let renderPositions: () => void;
   let selectedNodeId: string | null = null;
 
+  // Minimap update functions (assigned after minimap is created)
+  let updateMinimapViewport: () => void = () => {};
+  let updateMinimapPositions: () => void = () => {};
+
   // Function to compute hierarchical positions (top-to-bottom based on story flow)
   function computeHierarchicalPositions(graph: Graph, knotGroups: Map<string, GraphNode[]>) {
     // Build adjacency map (only for knot-level connections)
@@ -933,7 +937,7 @@ export function createGraphVisualization(
       .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9))
       .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.9))
       .alphaDecay(0.05)
-      .on('tick', renderPositions);
+      .on('tick', () => { renderPositions(); updateMinimapPositions(); });
 
     // Update links
     link = linksLayer
@@ -1131,6 +1135,7 @@ export function createGraphVisualization(
     .scaleExtent([0.1, 4])
     .on('zoom', (event) => {
       g.attr('transform', event.transform);
+      updateMinimapViewport();
       if (options?.onTransformChange) {
         const t = event.transform;
         options.onTransformChange({ x: t.x, y: t.y, k: t.k });
@@ -1247,6 +1252,155 @@ export function createGraphVisualization(
 
   // Initial render
   updateVisualization();
+
+  // === MINIMAP ===
+  const MINIMAP_WIDTH = 100;
+  const MINIMAP_HEIGHT = 70;
+  const MINIMAP_PADDING = 30;
+
+  const minimapDiv = document.createElement('div');
+  minimapDiv.className = 'minimap';
+  container.appendChild(minimapDiv);
+
+  const minimapSvg = d3.select(minimapDiv)
+    .append('svg')
+    .attr('width', MINIMAP_WIDTH)
+    .attr('height', MINIMAP_HEIGHT);
+
+  // Background
+  minimapSvg.append('rect')
+    .attr('width', MINIMAP_WIDTH)
+    .attr('height', MINIMAP_HEIGHT)
+    .attr('fill', 'rgba(30, 30, 30, 0.85)')
+    .attr('stroke', '#555')
+    .attr('stroke-width', 1)
+    .attr('rx', 4);
+
+  const minimapG = minimapSvg.append('g');
+
+  // Simplified links
+  const minimapLinkSel = minimapG.selectAll<SVGLineElement, GraphLink>('line')
+    .data(graph.links)
+    .join('line')
+    .attr('stroke', '#555')
+    .attr('stroke-width', 0.5);
+
+  // Simplified nodes
+  const minimapNodeSel = minimapG.selectAll<SVGRectElement, GraphNode>('rect.mm-node')
+    .data(graph.nodes)
+    .join('rect')
+    .attr('class', 'mm-node')
+    .attr('width', 8)
+    .attr('height', 4)
+    .attr('rx', 1)
+    .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71');
+
+  // Viewport rectangle (shows current visible area)
+  const viewportRect = minimapSvg.append('rect')
+    .attr('fill', 'rgba(255, 255, 255, 0.12)')
+    .attr('stroke', 'rgba(255, 255, 255, 0.6)')
+    .attr('stroke-width', 1)
+    .style('pointer-events', 'none');
+
+  // Compute scale and offset to fit the full graph into minimap pixels
+  function computeMinimapMapping() {
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    graph.nodes.forEach(n => {
+      if (n.x !== undefined && n.y !== undefined) {
+        minX = Math.min(minX, n.x - 50);
+        maxX = Math.max(maxX, n.x + 50);
+        minY = Math.min(minY, n.y - 25);
+        maxY = Math.max(maxY, n.y + 25);
+      }
+    });
+
+    if (minX === Infinity) return { scale: 1, offsetX: 0, offsetY: 0 };
+
+    const gw = maxX - minX + MINIMAP_PADDING * 2;
+    const gh = maxY - minY + MINIMAP_PADDING * 2;
+    const s = Math.min(MINIMAP_WIDTH / gw, MINIMAP_HEIGHT / gh);
+    const ox = (MINIMAP_WIDTH - gw * s) / 2 - (minX - MINIMAP_PADDING) * s;
+    const oy = (MINIMAP_HEIGHT - gh * s) / 2 - (minY - MINIMAP_PADDING) * s;
+
+    return { scale: s, offsetX: ox, offsetY: oy };
+  }
+
+  // Assign the real minimap position updater
+  updateMinimapPositions = () => {
+    const mm = computeMinimapMapping();
+
+    minimapNodeSel
+      .attr('x', d => (d.x || 0) * mm.scale + mm.offsetX - 4)
+      .attr('y', d => (d.y || 0) * mm.scale + mm.offsetY - 2);
+
+    minimapLinkSel
+      .attr('x1', (d: any) => {
+        const s = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+        return s ? (s.x || 0) * mm.scale + mm.offsetX : 0;
+      })
+      .attr('y1', (d: any) => {
+        const s = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
+        return s ? (s.y || 0) * mm.scale + mm.offsetY : 0;
+      })
+      .attr('x2', (d: any) => {
+        const t = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
+        return t ? (t.x || 0) * mm.scale + mm.offsetX : 0;
+      })
+      .attr('y2', (d: any) => {
+        const t = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
+        return t ? (t.y || 0) * mm.scale + mm.offsetY : 0;
+      });
+  };
+
+  // Assign the real minimap viewport updater
+  updateMinimapViewport = () => {
+    const mm = computeMinimapMapping();
+    const cw = container!.clientWidth;
+    const ch = container!.clientHeight;
+    const t = d3.zoomTransform(svg.node()!);
+
+    // Visible region in graph coordinates
+    const visLeft = -t.x / t.k;
+    const visTop = -t.y / t.k;
+    const visWidth = cw / t.k;
+    const visHeight = ch / t.k;
+
+    // Map to minimap pixel coordinates
+    viewportRect
+      .attr('x', visLeft * mm.scale + mm.offsetX)
+      .attr('y', visTop * mm.scale + mm.offsetY)
+      .attr('width', visWidth * mm.scale)
+      .attr('height', visHeight * mm.scale);
+  };
+
+  // Click/drag on minimap centers the main view on that graph position
+  function navigateFromMinimap(event: any) {
+    const [mx, my] = d3.pointer(event, minimapSvg.node());
+    const mm = computeMinimapMapping();
+
+    // Convert minimap pixel coords to graph coords
+    const graphX = (mx - mm.offsetX) / mm.scale;
+    const graphY = (my - mm.offsetY) / mm.scale;
+
+    // Center main view on this point, keeping current zoom level
+    const cw = container!.clientWidth;
+    const ch = container!.clientHeight;
+    const t = d3.zoomTransform(svg.node()!);
+
+    const newTransform = d3.zoomIdentity
+      .translate(cw / 2 - graphX * t.k, ch / 2 - graphY * t.k)
+      .scale(t.k);
+    svg.call(zoom.transform as any, newTransform);
+  }
+
+  minimapSvg.call(d3.drag<SVGSVGElement, unknown>()
+    .on('start drag', navigateFromMinimap) as any);
+
+  // Initial minimap render
+  updateMinimapPositions();
+  updateMinimapViewport();
 
   // Select initial node if specified
   function selectNode(nodeId: string): void {

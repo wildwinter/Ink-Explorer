@@ -221,6 +221,19 @@ body {
   border-left: 2px solid #ce9178;
 }
 
+/* Minimap */
+.minimap {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 100px;
+  height: 70px;
+  border-radius: 4px;
+  overflow: hidden;
+  z-index: 10;
+  cursor: crosshair;
+}
+
 /* Tab system styles */
 .tabs-header {
   background: #252526;
