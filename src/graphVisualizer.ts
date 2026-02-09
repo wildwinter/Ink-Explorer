@@ -223,13 +223,28 @@ export function createGraphVisualization(
       depths.set(firstKnot.id, 0);
     }
 
-    // BFS to assign depths
+    // BFS to assign depths - follow both forward and reverse edges
+    // so that nodes only reachable via reverse edges (e.g. OtherContent → Main)
+    // are still part of the connected component
     while (queue.length > 0) {
       const { id, depth } = queue.shift()!;
-      const neighbors = adjacency.get(id);
 
-      if (neighbors) {
-        for (const neighborId of neighbors) {
+      // Forward edges: children at depth + 1
+      const forward = adjacency.get(id);
+      if (forward) {
+        for (const neighborId of forward) {
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            depths.set(neighborId, depth + 1);
+            queue.push({ id: neighborId, depth: depth + 1 });
+          }
+        }
+      }
+
+      // Reverse edges: nodes that point to us, also at depth + 1
+      const backward = reverseAdjacency.get(id);
+      if (backward) {
+        for (const neighborId of backward) {
           if (!visited.has(neighborId)) {
             visited.add(neighborId);
             depths.set(neighborId, depth + 1);
@@ -239,12 +254,63 @@ export function createGraphVisualization(
       }
     }
 
-    // Assign positions to any unvisited knots
-    knots.forEach(n => {
-      if (!depths.has(n.id)) {
-        depths.set(n.id, 0);
+    // Record which knots are in the connected graph
+    const connectedKnotIds = new Set(visited);
+
+    // Process truly disconnected knots (no edges to/from the connected graph)
+    // Each component gets its own internal hierarchy starting from depth 0
+    while (true) {
+      const unvisitedKnot = knots.find(n => !visited.has(n.id));
+      if (!unvisitedKnot) break;
+
+      // Discover all nodes in this disconnected component (undirected)
+      const component = new Set<string>();
+      const discoverQueue = [unvisitedKnot.id];
+      component.add(unvisitedKnot.id);
+
+      while (discoverQueue.length > 0) {
+        const id = discoverQueue.shift()!;
+        for (const neighborId of [...(adjacency.get(id) || []), ...(reverseAdjacency.get(id) || [])]) {
+          if (!component.has(neighborId) && !visited.has(neighborId)) {
+            component.add(neighborId);
+            discoverQueue.push(neighborId);
+          }
+        }
       }
-    });
+
+      // Directed BFS within the component (starting from depth 0)
+      const componentEntry = Array.from(component).find(id => {
+        const incoming = reverseAdjacency.get(id);
+        return !incoming || !Array.from(incoming).some(src => component.has(src));
+      }) || Array.from(component)[0];
+
+      const compQueue: Array<{ id: string; depth: number }> = [];
+      compQueue.push({ id: componentEntry, depth: 0 });
+      visited.add(componentEntry);
+      depths.set(componentEntry, 0);
+
+      while (compQueue.length > 0) {
+        const { id, depth: d } = compQueue.shift()!;
+        const forward = adjacency.get(id);
+        if (forward) {
+          for (const neighborId of forward) {
+            if (!visited.has(neighborId) && component.has(neighborId)) {
+              visited.add(neighborId);
+              depths.set(neighborId, d + 1);
+              compQueue.push({ id: neighborId, depth: d + 1 });
+            }
+          }
+        }
+      }
+
+      // Handle remaining nodes in the component (cycles etc.)
+      component.forEach(id => {
+        if (!visited.has(id)) {
+          visited.add(id);
+          depths.set(id, 0);
+        }
+      });
+    }
 
     // Layout parameters
     const depthSpacing = 300; // Horizontal spacing between knot levels (left-to-right)
@@ -644,6 +710,37 @@ export function createGraphVisualization(
         }
       });
     });
+
+    // Shift disconnected components below the connected graph so they don't
+    // visually overlap with any edges in the connected graph
+    let maxConnectedY = -Infinity;
+    graph.nodes.forEach(n => {
+      const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+      if (connectedKnotIds.has(knotId) && n.y !== undefined) {
+        maxConnectedY = Math.max(maxConnectedY, n.y);
+      }
+    });
+
+    if (maxConnectedY > -Infinity) {
+      let minDisconnectedY = Infinity;
+      graph.nodes.forEach(n => {
+        const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+        if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
+          minDisconnectedY = Math.min(minDisconnectedY, n.y);
+        }
+      });
+
+      if (minDisconnectedY < Infinity) {
+        const verticalGap = 300;
+        const yShift = maxConnectedY - minDisconnectedY + verticalGap;
+        graph.nodes.forEach(n => {
+          const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+          if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
+            n.y += yShift;
+          }
+        });
+      }
+    }
   }
 
   // Helper function to get node dimensions - all nodes are the same size now

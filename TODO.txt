@@ -1,6 +1,5 @@
 TODO:
 Syntax colouring.
-Try to position unconnected groups further away.
 Remove icons.
 Themes
 Test different include paths.
@@ -24,3 +23,4 @@ Fix to click and drag.
 BUG: Doesn't show included Ink file content.
 Maintain window position and layout.
 Maintain window and focused node per starting file.
+Position unconnected groups further away.
