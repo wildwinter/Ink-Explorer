@@ -3,6 +3,7 @@
 import type { CompilationResult } from './ink/compiler.js';
 import type { StitchInfo } from './ink/analyzer.js';
 import { createGraphVisualization } from './graphVisualizer.js';
+import type { GraphController } from './graphVisualizer.js';
 
 // Extend Window interface for our API
 declare global {
@@ -10,12 +11,16 @@ declare global {
     api: {
       onCompileResult: (callback: (result: CompilationResult) => void) => void;
       onToggleCodePane: (callback: () => void) => void;
+      saveFileState: (filePath: string, state: unknown) => void;
     };
   }
 }
 
-// Module-level state for source extraction
+// Module-level state
 let currentSourceFiles: Map<string, string> | null = null;
+let currentFilePath: string | null = null;
+let currentGraphController: GraphController | null = null;
+let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
@@ -176,6 +181,23 @@ function escapeRegExp(str: string): string {
 }
 
 /**
+ * Saves the current per-file state (code pane, graph transform, selected node).
+ */
+function saveCurrentFileState(): void {
+  if (!currentFilePath || !window.api) return;
+  const pane = document.getElementById('code-pane');
+  const codePaneOpen = pane ? pane.style.display !== 'none' : true;
+  const graphTransform = currentGraphController ? currentGraphController.getTransform() : null;
+  const selectedNodeId = currentGraphController ? currentGraphController.getSelectedNodeId() : null;
+  window.api.saveFileState(currentFilePath, { codePaneOpen, graphTransform, selectedNodeId });
+}
+
+function debouncedSaveTransform(): void {
+  if (transformSaveTimeout) clearTimeout(transformSaveTimeout);
+  transformSaveTimeout = setTimeout(saveCurrentFileState, 500);
+}
+
+/**
  * Shows the code pane with the given title and source code.
  */
 function showCodePane(title: string, source: string): void {
@@ -192,6 +214,7 @@ function showCodePane(title: string, source: string): void {
 function hideCodePane(): void {
   const pane = document.getElementById('code-pane');
   if (pane) pane.style.display = 'none';
+  saveCurrentFileState();
 }
 
 function showCodePanePrompt(): void {
@@ -213,6 +236,7 @@ function toggleCodePane(): void {
   } else {
     pane.style.display = 'none';
   }
+  saveCurrentFileState();
 }
 
 /**
@@ -239,6 +263,7 @@ function handleNodeClick(nodeId: string, nodeType: 'knot' | 'stitch', knotName?:
   } else {
     showCodePane(label, `Source code not found for ${nodeId}`);
   }
+  saveCurrentFileState();
 }
 
 // Set up listener for Ink compilation results from main process
@@ -271,11 +296,36 @@ function setupCompileResultListener(): void {
       } else {
         currentSourceFiles = null;
       }
-      showCodePanePrompt();
+
+      // Extract per-file state sent from main process
+      const ipcResult = result as any;
+      currentFilePath = ipcResult.filePath || null;
+      const savedState = ipcResult.savedFileState as { codePaneOpen: boolean; graphTransform: { x: number; y: number; k: number } | null; selectedNodeId: string | null } | null;
+
+      // Restore code pane visibility
+      if (savedState) {
+        if (savedState.codePaneOpen) {
+          if (savedState.selectedNodeId) {
+            // Will be populated when selectNode triggers handleNodeClick
+            showCodePanePrompt();
+          } else {
+            showCodePanePrompt();
+          }
+        } else {
+          hideCodePane();
+        }
+      } else {
+        showCodePanePrompt();
+      }
 
       // Display interactive graph in left pane
       structureOutput.innerHTML = ''; // Clear previous content
-      createGraphVisualization('structure-output', result.structure, handleNodeClick);
+      currentGraphController = createGraphVisualization('structure-output', result.structure, {
+        onNodeClick: handleNodeClick,
+        onTransformChange: debouncedSaveTransform,
+        initialTransform: savedState?.graphTransform || undefined,
+        initialSelectedNodeId: savedState?.selectedNodeId
+      });
 
       // Build structure tab content
       let structureHTML = '';
@@ -343,8 +393,10 @@ function setupCompileResultListener(): void {
         console.warn('Warnings:', result.warnings);
       }
 
-      // Clear code pane state on failure
+      // Clear state on failure
       currentSourceFiles = null;
+      currentFilePath = null;
+      currentGraphController = null;
       hideCodePane();
 
       // Show error state

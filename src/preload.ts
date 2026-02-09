@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('toggle-code-pane', () => {
       callback();
     });
+  },
+  // Save per-file state to main process
+  saveFileState: (filePath: string, state: unknown) => {
+    ipcRenderer.send('save-file-state', filePath, state);
   }
 });
 

@@ -100,18 +100,33 @@ function structureToGraph(structure: StoryStructure): Graph {
 }
 
 
+export interface GraphOptions {
+  onNodeClick?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void;
+  onTransformChange?: (transform: { x: number; y: number; k: number }) => void;
+  initialTransform?: { x: number; y: number; k: number };
+  initialSelectedNodeId?: string | null;
+}
+
+export interface GraphController {
+  getTransform(): { x: number; y: number; k: number };
+  setTransform(x: number, y: number, k: number): void;
+  getSelectedNodeId(): string | null;
+  selectNode(nodeId: string): void;
+}
+
 /**
  * Creates an interactive graph visualization
  */
 export function createGraphVisualization(
   containerId: string,
   structure: StoryStructure,
-  onNodeClick?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void
-): void {
+  options?: GraphOptions
+): GraphController | null {
+  const onNodeClick = options?.onNodeClick;
   const container = document.getElementById(containerId);
   if (!container) {
     console.error(`Container ${containerId} not found`);
-    return;
+    return null;
   }
 
   // Clear previous content
@@ -122,7 +137,7 @@ export function createGraphVisualization(
 
   if (graph.nodes.length === 0) {
     container.innerHTML = '<div class="empty-message">No nodes to display</div>';
-    return;
+    return null;
   }
 
   // Capture initial dimensions for layout computation
@@ -160,6 +175,7 @@ export function createGraphVisualization(
   let link: d3.Selection<SVGLineElement, GraphLink, SVGGElement, unknown>;
   let node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>;
   let renderPositions: () => void;
+  let selectedNodeId: string | null = null;
 
   // Function to compute hierarchical positions (top-to-bottom based on story flow)
   function computeHierarchicalPositions(graph: Graph, knotGroups: Map<string, GraphNode[]>) {
@@ -724,8 +740,14 @@ export function createGraphVisualization(
     if (needsLayout) {
       computeHierarchicalPositions(graph, knotGroups);
 
-      // After initial layout, zoom to fit the entire graph
-      zoomToFit();
+      // Restore saved transform or zoom to fit
+      if (options?.initialTransform) {
+        const t = options.initialTransform;
+        const transform = d3.zoomIdentity.translate(t.x, t.y).scale(t.k);
+        svg.call(zoom.transform as any, transform);
+      } else {
+        zoomToFit();
+      }
     }
 
     // Stop existing simulation if any
@@ -898,6 +920,7 @@ export function createGraphVisualization(
                 .attr('stroke', '#f1c40f')
                 .attr('stroke-width', 3);
 
+              selectedNodeId = d.id;
               onNodeClick(d.id, d.type, d.knotName);
             });
           }
@@ -1011,6 +1034,10 @@ export function createGraphVisualization(
     .scaleExtent([0.1, 4])
     .on('zoom', (event) => {
       g.attr('transform', event.transform);
+      if (options?.onTransformChange) {
+        const t = event.transform;
+        options.onTransformChange({ x: t.x, y: t.y, k: t.k });
+      }
     });
 
   svg.call(zoom as any);
@@ -1123,4 +1150,45 @@ export function createGraphVisualization(
 
   // Initial render
   updateVisualization();
+
+  // Select initial node if specified
+  function selectNode(nodeId: string): void {
+    const targetNode = graph.nodes.find(n => n.id === nodeId);
+    if (!targetNode) return;
+
+    // Highlight the node visually
+    nodesLayer.selectAll('.node-rect')
+      .attr('stroke', '#ecf0f1')
+      .attr('stroke-width', 2);
+    nodesLayer.selectAll<SVGGElement, GraphNode>('.node')
+      .filter(d => d.id === nodeId)
+      .select('.node-rect')
+      .attr('stroke', '#f1c40f')
+      .attr('stroke-width', 3);
+
+    selectedNodeId = nodeId;
+    if (onNodeClick) {
+      onNodeClick(targetNode.id, targetNode.type, targetNode.knotName);
+    }
+  }
+
+  if (options?.initialSelectedNodeId) {
+    selectNode(options.initialSelectedNodeId);
+  }
+
+  // Return controller
+  return {
+    getTransform(): { x: number; y: number; k: number } {
+      const t = d3.zoomTransform(svg.node()!);
+      return { x: t.x, y: t.y, k: t.k };
+    },
+    setTransform(x: number, y: number, k: number): void {
+      const transform = d3.zoomIdentity.translate(x, y).scale(k);
+      svg.call(zoom.transform as any, transform);
+    },
+    getSelectedNodeId(): string | null {
+      return selectedNodeId;
+    },
+    selectNode
+  };
 }

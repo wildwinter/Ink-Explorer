@@ -10,14 +10,12 @@ interface InkError {
   text?: string;
 }
 
-type ErrorInput = string | InkError | Error;
-
 /**
  * Formats an error object to a readable string
  * @param error - The error to format
  * @returns A human-readable error message
  */
-export function formatError(error: ErrorInput): string {
+export function formatError(error: unknown): string {
   if (typeof error === 'string') {
     return error;
   }
@@ -49,7 +47,7 @@ export function formatError(error: ErrorInput): string {
 }
 
 export interface ErrorHandler {
-  handler: (message: ErrorInput, type?: string) => void;
+  handler: (message: unknown, type?: string) => void;
   errors: string[];
   warnings: string[];
 }
@@ -62,7 +60,7 @@ export function createErrorHandler(): ErrorHandler {
   const collectedErrors: string[] = [];
   const collectedWarnings: string[] = [];
 
-  const handler = (message: ErrorInput, type?: string): void => {
+  const handler = (message: unknown, type?: string): void => {
     const formattedMessage = formatError(message);
     if (type === 'WARNING' || type === 'warning') {
       collectedWarnings.push(formattedMessage);

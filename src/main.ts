@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, ipcMain, dialog, MenuItemConstructorOptions }
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { execFileSync } from 'child_process';
 import { compileInk } from './ink/compiler.js';
 import { RecentFilesManager } from './utils/recentFiles.js';
 
@@ -14,6 +15,86 @@ let mainWindow: BrowserWindow | null;
 const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
 const recentFilesManager = new RecentFilesManager(recentFilesPath);
 
+// Platform-native config storage
+// macOS: NSUserDefaults (~/Library/Preferences/net.wildwinter.dinkexplorer.plist)
+// Windows: Registry (HKCU\Software\DinkExplorer)
+// Uses execFileSync to avoid shell escaping issues
+const BUNDLE_ID = 'net.wildwinter.dinkexplorer';
+const REG_KEY = 'HKCU\\Software\\DinkExplorer';
+let boundsTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function readPref(key: string): string | null {
+  try {
+    if (process.platform === 'darwin') {
+      return execFileSync('defaults', ['read', BUNDLE_ID, key], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    } else if (process.platform === 'win32') {
+      const output = execFileSync('reg', ['query', REG_KEY, '/v', key], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+      const match = output.match(new RegExp(`${key}\\s+REG_SZ\\s+(.+)`));
+      return match ? match[1].trim() : null;
+    }
+  } catch { /* key not found */ }
+  return null;
+}
+
+function writePref(key: string, value: string): void {
+  try {
+    if (process.platform === 'darwin') {
+      execFileSync('defaults', ['write', BUNDLE_ID, key, '-string', value], { stdio: 'pipe' });
+    } else if (process.platform === 'win32') {
+      execFileSync('reg', ['add', REG_KEY, '/v', key, '/t', 'REG_SZ', '/d', value, '/f'], { stdio: 'pipe' });
+    }
+  } catch { /* ignore */ }
+}
+
+// Window bounds persistence
+function loadWindowBounds(): Electron.Rectangle | null {
+  const raw = readPref('windowBounds');
+  if (!raw) return null;
+  try {
+    const bounds = JSON.parse(raw);
+    if (typeof bounds.x === 'number' && typeof bounds.y === 'number' &&
+        typeof bounds.width === 'number' && typeof bounds.height === 'number') {
+      return bounds;
+    }
+  } catch { /* invalid data */ }
+  return null;
+}
+
+function saveWindowBounds(): void {
+  if (!mainWindow) return;
+  if (boundsTimeout) clearTimeout(boundsTimeout);
+  boundsTimeout = setTimeout(() => {
+    if (!mainWindow) return;
+    writePref('windowBounds', JSON.stringify(mainWindow.getBounds()));
+  }, 500);
+}
+
+// Per-file state persistence
+interface FileState {
+  codePaneOpen: boolean;
+  graphTransform: { x: number; y: number; k: number } | null;
+  selectedNodeId: string | null;
+}
+
+function loadAllFileStates(): Record<string, FileState> {
+  const raw = readPref('fileStates');
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch { return {}; }
+}
+
+function loadFileState(filePath: string): FileState | null {
+  const all = loadAllFileStates();
+  return all[filePath] || null;
+}
+
+function saveFileState(filePath: string, state: FileState): void {
+  const all = loadAllFileStates();
+  all[filePath] = state;
+  writePref('fileStates', JSON.stringify(all));
+}
+
 // Function to compile Ink file and send results to renderer
 async function compileAndLogInk(inkFilePath: string): Promise<void> {
   const result = await compileInk(inkFilePath);
@@ -25,7 +106,9 @@ async function compileAndLogInk(inkFilePath: string): Promise<void> {
       ...result,
       sourceFiles: result.sourceFiles
         ? Object.fromEntries(result.sourceFiles)
-        : undefined
+        : undefined,
+      filePath: inkFilePath,
+      savedFileState: loadFileState(inkFilePath)
     };
     mainWindow.webContents.send('ink-compile-result', serializable);
   }
@@ -72,6 +155,11 @@ ipcMain.handle('compile-ink', async (_event, inkFilePath: string) => {
   return await compileInk(inkFilePath);
 });
 
+// IPC handler for saving per-file state
+ipcMain.on('save-file-state', (_event, filePath: string, state: FileState) => {
+  saveFileState(filePath, state);
+});
+
 // Check if we're in development mode
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
@@ -89,9 +177,13 @@ function createWindow(): void {
   console.log('Preload path:', preloadPath);
   console.log('Preload exists:', fs.existsSync(preloadPath));
 
+  const savedBounds = loadWindowBounds();
+
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: savedBounds?.width ?? 800,
+    height: savedBounds?.height ?? 600,
+    x: savedBounds?.x,
+    y: savedBounds?.y,
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
@@ -99,6 +191,10 @@ function createWindow(): void {
       sandbox: false // Disable sandbox to ensure preload works
     }
   });
+
+  // Save window bounds on resize and move
+  mainWindow.on('resize', saveWindowBounds);
+  mainWindow.on('move', saveWindowBounds);
 
   // In development, load from Vite dev server; in production, load built files
   if (isDev) {

@@ -1,6 +1,5 @@
 TODO:
 Syntax colouring.
-Maintain window and focused node per starting file.
 Try to position unconnected groups further away.
 Remove icons.
 Themes
@@ -23,3 +22,5 @@ DONE:
 Remove the old panes.
 Fix to click and drag.
 BUG: Doesn't show included Ink file content.
+Maintain window position and layout.
+Maintain window and focused node per starting file.
