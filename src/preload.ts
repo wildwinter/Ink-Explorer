@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('ink-compile-result', (_event: IpcRendererEvent, result: CompilationResult) => {
       callback(result);
     });
+  },
+  // Listen for code pane toggle from View menu
+  onToggleCodePane: (callback: () => void) => {
+    ipcRenderer.on('toggle-code-pane', () => {
+      callback();
+    });
   }
 });
 

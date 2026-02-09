@@ -1,0 +1,21 @@
+TODO:
+Maintain window and focused node per starting file.
+Remove the old panes.
+Try to position unconnected groups further away.
+Remove icons.
+Themes
+Test tunnels
+Test more complex Ink if you can find some.
+
+Add Ink runner.
+Add simulation callout.
+Add variable tracking.
+Add loading/saving test sets of variables.
+
+Parse and markup Dink
+
+Rename
+
+Add stress testing.
+
+DONE:

@@ -105,7 +105,8 @@ function structureToGraph(structure: StoryStructure): Graph {
  */
 export function createGraphVisualization(
   containerId: string,
-  structure: StoryStructure
+  structure: StoryStructure,
+  onNodeClick?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void
 ): void {
   const container = document.getElementById(containerId);
   if (!container) {
@@ -124,16 +125,14 @@ export function createGraphVisualization(
     return;
   }
 
-  // Set up dimensions
-  const width = container.clientWidth;
+  // Capture initial dimensions for layout computation
   const height = container.clientHeight;
 
-  // Create SVG
+  // Create SVG - no viewBox so resizing clips rather than rescaling
   const svg = d3.select(`#${containerId}`)
     .append('svg')
     .attr('width', '100%')
-    .attr('height', '100%')
-    .attr('viewBox', `0 0 ${width} ${height}`);
+    .attr('height', '100%');
 
   // Create container for zoom
   const g = svg.append('g');
@@ -885,6 +884,24 @@ export function createGraphVisualization(
           nodeEnter.append('title')
             .text(d => d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
 
+          // Add click handler (only fires if not dragging)
+          if (onNodeClick) {
+            nodeEnter.on('click', (event: MouseEvent, d: GraphNode) => {
+              // Ignore if this was a drag
+              if (wasDragged) return;
+
+              // Highlight selected node
+              nodesLayer.selectAll('.node-rect')
+                .attr('stroke', '#ecf0f1')
+                .attr('stroke-width', 2);
+              d3.select(event.currentTarget as Element).select('.node-rect')
+                .attr('stroke', '#f1c40f')
+                .attr('stroke-width', 3);
+
+              onNodeClick(d.id, d.type, d.knotName);
+            });
+          }
+
           return nodeEnter;
         },
         update => update,
@@ -898,6 +915,7 @@ export function createGraphVisualization(
   // Drag functions - update target position and move stitches with knots
   let dragStartX: number;
   let dragStartY: number;
+  let wasDragged = false;
 
   function dragStarted(event: any) {
     if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -905,9 +923,11 @@ export function createGraphVisualization(
     event.subject.fy = event.subject.y;
     dragStartX = event.subject.x;
     dragStartY = event.subject.y;
+    wasDragged = false;
   }
 
   function dragged(event: any) {
+    wasDragged = true;
     // Update position during drag
     event.subject.fx = event.x;
     event.subject.fy = event.y;
@@ -983,6 +1003,10 @@ export function createGraphVisualization(
   function zoomToFit() {
     if (graph.nodes.length === 0) return;
 
+    // Use current container dimensions
+    const currentWidth = container!.clientWidth;
+    const currentHeight = container!.clientHeight;
+
     // Calculate bounds of all nodes
     const padding = 50; // Padding around the graph
     const nodeDims = { width: 100, height: 50 };
@@ -1010,14 +1034,14 @@ export function createGraphVisualization(
 
     // Calculate scale to fit
     const scale = Math.min(
-      width / graphWidth,
-      height / graphHeight,
+      currentWidth / graphWidth,
+      currentHeight / graphHeight,
       4 // Max zoom level
     );
 
     // Calculate translation to center the graph
-    const translateX = (width - graphWidth * scale) / 2 - minX * scale;
-    const translateY = (height - graphHeight * scale) / 2 - minY * scale;
+    const translateX = (currentWidth - graphWidth * scale) / 2 - minX * scale;
+    const translateY = (currentHeight - graphHeight * scale) / 2 - minY * scale;
 
     // Apply the transform
     const transform = d3.zoomIdentity
@@ -1032,7 +1056,7 @@ export function createGraphVisualization(
   // Add legend
   const legend = svg.append('g')
     .attr('class', 'legend')
-    .attr('transform', `translate(20, ${height - 60})`);
+    .attr('transform', 'translate(20, 20)');
 
   // Legend background
   legend.append('rect')

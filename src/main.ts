@@ -202,6 +202,16 @@ function createMenu(): void {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Toggle Code Pane',
+          accelerator: isMac ? 'Cmd+Shift+C' : 'Ctrl+Shift+C',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('toggle-code-pane');
+            }
+          }
+        },
+        { type: 'separator' as const },
         { role: 'reload' as const },
         { role: 'forceReload' as const },
         { role: 'toggleDevTools' as const },

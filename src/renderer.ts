@@ -9,17 +9,28 @@ declare global {
   interface Window {
     api: {
       onCompileResult: (callback: (result: CompilationResult) => void) => void;
+      onToggleCodePane: (callback: () => void) => void;
     };
   }
 }
+
+// Module-level state for source extraction
+let currentSourceFiles: Map<string, string> | null = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
   showEmptyState();
 
+  // Set up close button for code pane
+  const closeBtn = document.getElementById('code-pane-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', hideCodePane);
+  }
+
   // Set up IPC listener after DOM is ready and API is available
   if (window.api) {
     setupCompileResultListener();
+    window.api.onToggleCodePane(toggleCodePane);
   } else {
     console.error('API not available - preload script may not have loaded correctly');
   }
@@ -74,7 +85,7 @@ function switchTab(tabId: string) {
   // Update button states
   const buttons = document.querySelectorAll('.tab-button');
   buttons.forEach((button, index) => {
-    const content = document.getElementById(`tab-${document.querySelectorAll('.tab-content')[index].id.replace('tab-', '')}`);
+    document.getElementById(`tab-${document.querySelectorAll('.tab-content')[index].id.replace('tab-', '')}`);
     if (button.textContent === tabId || document.querySelectorAll('.tab-content')[index].id === `tab-${tabId}`) {
       button.classList.add('active');
       document.querySelectorAll('.tab-content')[index].classList.add('active');
@@ -113,6 +124,119 @@ function showEmptyState(): void {
   ]);
 }
 
+/**
+ * Extracts the source code for a knot (including all its stitches) from the raw Ink source files.
+ */
+function extractKnotSource(knotName: string, sourceFiles: Map<string, string>): { source: string; filename: string } | null {
+  const knotPattern = new RegExp(`^===\\s+${escapeRegExp(knotName)}\\s*={0,3}\\s*$`, 'm');
+  const nextKnotPattern = /^===\s+[a-zA-Z_][a-zA-Z0-9_]*\s*={0,3}\s*$/m;
+
+  for (const [filename, content] of sourceFiles) {
+    const match = knotPattern.exec(content);
+    if (match) {
+      const startIndex = match.index;
+      // Find the next knot declaration after this one
+      const rest = content.substring(startIndex + match[0].length);
+      const nextMatch = nextKnotPattern.exec(rest);
+      if (nextMatch) {
+        return { source: content.substring(startIndex, startIndex + match[0].length + nextMatch.index).trimEnd(), filename };
+      }
+      // No next knot — take everything to the end
+      return { source: content.substring(startIndex).trimEnd(), filename };
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the source code for a single stitch from the raw Ink source files.
+ */
+function extractStitchSource(knotName: string, stitchName: string, sourceFiles: Map<string, string>): { source: string; filename: string } | null {
+  const knotResult = extractKnotSource(knotName, sourceFiles);
+  if (!knotResult) return null;
+
+  const { source: knotSource, filename } = knotResult;
+  const stitchPattern = new RegExp(`^=\\s+${escapeRegExp(stitchName)}\\s*$`, 'm');
+  const match = stitchPattern.exec(knotSource);
+  if (!match) return null;
+
+  const startIndex = match.index;
+  const rest = knotSource.substring(startIndex + match[0].length);
+  // Next stitch or end of knot
+  const nextStitchPattern = /^=\s+[a-zA-Z_][a-zA-Z0-9_]*\s*$/m;
+  const nextMatch = nextStitchPattern.exec(rest);
+  if (nextMatch) {
+    return { source: knotSource.substring(startIndex, startIndex + match[0].length + nextMatch.index).trimEnd(), filename };
+  }
+  return { source: knotSource.substring(startIndex).trimEnd(), filename };
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Shows the code pane with the given title and source code.
+ */
+function showCodePane(title: string, source: string): void {
+  const pane = document.getElementById('code-pane');
+  const titleEl = document.getElementById('code-pane-title');
+  const sourceEl = document.getElementById('code-pane-source');
+  if (!pane || !titleEl || !sourceEl) return;
+
+  titleEl.textContent = title;
+  sourceEl.textContent = source;
+  pane.style.display = 'flex';
+}
+
+function hideCodePane(): void {
+  const pane = document.getElementById('code-pane');
+  if (pane) pane.style.display = 'none';
+}
+
+function toggleCodePane(): void {
+  const pane = document.getElementById('code-pane');
+  if (!pane) return;
+  if (pane.style.display === 'none') {
+    // Show with a default message if no node selected yet
+    const sourceEl = document.getElementById('code-pane-source');
+    if (sourceEl && !sourceEl.textContent) {
+      const titleEl = document.getElementById('code-pane-title');
+      if (titleEl) titleEl.textContent = 'Ink Source';
+      sourceEl.textContent = 'Click a knot or stitch in the graph to view its source code.';
+    }
+    pane.style.display = 'flex';
+  } else {
+    pane.style.display = 'none';
+  }
+}
+
+/**
+ * Handles a node click from the graph visualizer.
+ */
+function handleNodeClick(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): void {
+  if (!currentSourceFiles) return;
+
+  let result: { source: string; filename: string } | null;
+  let label: string;
+
+  if (nodeType === 'knot') {
+    label = `Knot: ${nodeId}`;
+    result = extractKnotSource(nodeId, currentSourceFiles);
+  } else {
+    const parentKnot = knotName || nodeId.split('.')[0];
+    const stitchName = nodeId.includes('.') ? nodeId.split('.').slice(1).join('.') : nodeId;
+    label = `Stitch: ${parentKnot}.${stitchName}`;
+    result = extractStitchSource(parentKnot, stitchName, currentSourceFiles);
+  }
+
+  if (result) {
+    showCodePane(`${label} [${result.filename}]`, result.source);
+  } else {
+    showCodePane(label, `Source code not found for ${nodeId}`);
+  }
+}
+
 // Set up listener for Ink compilation results from main process
 function setupCompileResultListener(): void {
   window.api.onCompileResult((result) => {
@@ -135,9 +259,13 @@ function setupCompileResultListener(): void {
       console.log('\nStory Info:', result.storyInfo);
       console.log('\nStructure:', result.structure);
 
+      // Store source files for code pane extraction
+      currentSourceFiles = result.sourceFiles || null;
+      hideCodePane();
+
       // Display interactive graph in left pane
       structureOutput.innerHTML = ''; // Clear previous content
-      createGraphVisualization('structure-output', result.structure);
+      createGraphVisualization('structure-output', result.structure, handleNodeClick);
 
       // Build structure tab content
       let structureHTML = '';
@@ -188,12 +316,12 @@ function setupCompileResultListener(): void {
       }
 
       // Create tabs array
-      const tabs = [
+      const tabs: Array<{ id: string; label: string; content: string; type: 'html' | 'text' }> = [
         {
           id: 'structure',
           label: 'Structure',
           content: structureHTML,
-          type: 'html' as const
+          type: 'html'
         }
       ];
 
@@ -222,6 +350,10 @@ function setupCompileResultListener(): void {
       if (result.warnings.length > 0) {
         console.warn('Warnings:', result.warnings);
       }
+
+      // Clear code pane state on failure
+      currentSourceFiles = null;
+      hideCodePane();
 
       // Show error state
       structureOutput.innerHTML = '<div class="empty-message">Compilation failed</div>';
