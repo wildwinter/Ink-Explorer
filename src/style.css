@@ -146,6 +146,11 @@ body {
   color: #d4d4d4;
 }
 
+.code-pane-prompt {
+  color: #858585;
+  font-style: italic;
+}
+
 /* New structure explorer styles */
 .structure-explorer {
   display: flex;

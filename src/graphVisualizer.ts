@@ -926,7 +926,12 @@ export function createGraphVisualization(
     wasDragged = false;
   }
 
+  const DRAG_THRESHOLD = 5;
+
   function dragged(event: any) {
+    const dx = event.x - dragStartX;
+    const dy = event.y - dragStartY;
+    if (!wasDragged && Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
     wasDragged = true;
     // Update position during drag
     event.subject.fx = event.x;
@@ -952,6 +957,17 @@ export function createGraphVisualization(
 
   function dragEnded(event: any) {
     if (!event.active) simulation.alphaTarget(0);
+
+    if (!wasDragged) {
+      // Below threshold — snap back to original position, treat as click
+      event.subject.fx = null;
+      event.subject.fy = null;
+      event.subject.x = dragStartX;
+      event.subject.y = dragStartY;
+      simulation.alpha(0.1).restart();
+      return;
+    }
+
     // Update both current position and target position to the new location
     const newX = event.subject.fx;
     const newY = event.subject.fy;

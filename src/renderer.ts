@@ -194,17 +194,21 @@ function hideCodePane(): void {
   if (pane) pane.style.display = 'none';
 }
 
+function showCodePanePrompt(): void {
+  const pane = document.getElementById('code-pane');
+  const titleEl = document.getElementById('code-pane-title');
+  const sourceEl = document.getElementById('code-pane-source');
+  if (!pane || !titleEl || !sourceEl) return;
+
+  titleEl.textContent = 'Ink Source';
+  sourceEl.innerHTML = '<span class="code-pane-prompt">Click on a node to view the code</span>';
+  pane.style.display = 'flex';
+}
+
 function toggleCodePane(): void {
   const pane = document.getElementById('code-pane');
   if (!pane) return;
   if (pane.style.display === 'none') {
-    // Show with a default message if no node selected yet
-    const sourceEl = document.getElementById('code-pane-source');
-    if (sourceEl && !sourceEl.textContent) {
-      const titleEl = document.getElementById('code-pane-title');
-      if (titleEl) titleEl.textContent = 'Ink Source';
-      sourceEl.textContent = 'Click a knot or stitch in the graph to view its source code.';
-    }
     pane.style.display = 'flex';
   } else {
     pane.style.display = 'none';
@@ -261,7 +265,7 @@ function setupCompileResultListener(): void {
 
       // Store source files for code pane extraction
       currentSourceFiles = result.sourceFiles || null;
-      hideCodePane();
+      showCodePanePrompt();
 
       // Display interactive graph in left pane
       structureOutput.innerHTML = ''; // Clear previous content
@@ -315,33 +319,15 @@ function setupCompileResultListener(): void {
         structureHTML += '</div>';
       }
 
-      // Create tabs array
-      const tabs: Array<{ id: string; label: string; content: string; type: 'html' | 'text' }> = [
+      // Create tabs
+      createTabs([
         {
           id: 'structure',
           label: 'Structure',
           content: structureHTML,
           type: 'html'
         }
-      ];
-
-      // Add source file tabs
-      if (result.sourceFiles) {
-        // Convert Map to array and sort by filename
-        const sourceFilesArray = Array.from(result.sourceFiles.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-
-        sourceFilesArray.forEach(([filename, content]) => {
-          tabs.push({
-            id: `source-${filename}`,
-            label: filename,
-            content: content,
-            type: 'text' as const
-          });
-        });
-      }
-
-      // Create tabs
-      createTabs(tabs);
+      ]);
 
     } else {
       console.error('❌ Ink compilation failed!');
