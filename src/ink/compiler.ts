@@ -19,6 +19,7 @@ export interface CompilationResult {
   structure?: StoryStructure;
   sourceFiles?: Map<string, string>; // filename -> content
   mainFilename?: string; // The main file that was loaded
+  storyJson?: string; // Compiled story JSON for inkjs runtime
 }
 
 /**
@@ -163,7 +164,8 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
       storyInfo,
       structure,
       sourceFiles: fileHandler.loadedFiles,
-      mainFilename
+      mainFilename,
+      storyJson: story.ToJson()
     };
 
   } catch (error) {

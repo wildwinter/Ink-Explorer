@@ -4,7 +4,6 @@ Test different include paths.
 Test tunnels
 Test more complex Ink if you can find some.
 
-Add Ink runner.
 Add simulation callout.
 Add variable tracking.
 Add loading/saving test sets of variables.
@@ -25,3 +24,4 @@ Position unconnected groups further away.
 Add minimap.
 Syntax colouring.
 Remove icons.
+Add Ink runner.

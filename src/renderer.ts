@@ -5,6 +5,7 @@ import type { StitchInfo } from './ink/analyzer.js';
 import { createGraphVisualization } from './graphVisualizer.js';
 import type { GraphController } from './graphVisualizer.js';
 import { highlightInkSyntax } from './syntaxHighlighter.js';
+import { Story } from 'inkjs';
 
 // Extend Window interface for our API
 declare global {
@@ -22,6 +23,14 @@ let currentSourceFiles: Map<string, string> | null = null;
 let currentFilePath: string | null = null;
 let currentGraphController: GraphController | null = null;
 let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Live Ink state
+let currentStoryJson: string | null = null;
+let currentStartNode: string | null = null;
+let liveInkStory: InstanceType<typeof Story> | null = null;
+let liveInkStateStack: Array<{ state: string; turnElement: HTMLElement }> = [];
+let liveInkCurrentTurn: HTMLElement | null = null;
+let liveInkIsDinkMode = false;
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
@@ -110,6 +119,7 @@ function switchTab(tabId: string) {
       content.classList.remove('active');
     }
   });
+
 }
 
 function showEmptyState(): void {
@@ -267,6 +277,276 @@ function handleNodeClick(nodeId: string, nodeType: 'knot' | 'stitch', knotName?:
   saveCurrentFileState();
 }
 
+// --- Live Ink playback -------------------------------------------------------
+
+const LIVE_INK_HTML = `
+<div class="live-ink-container">
+  <div class="live-ink-toolbar">
+    <div class="live-ink-btn" id="live-ink-test" title="Test from selected node">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="6 3 20 12 6 21 6 3"/>
+      </svg>
+    </div>
+    <div class="live-ink-btn" id="live-ink-restart" title="Restart">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="19 20 9 12 19 4 19 20"/>
+        <line x1="5" y1="19" x2="5" y2="5"/>
+      </svg>
+    </div>
+    <div class="live-ink-btn disabled" id="live-ink-back" title="Step Back">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 14 4 9l5-5"/>
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>
+      </svg>
+    </div>
+    <span class="live-ink-status" id="live-ink-status"></span>
+  </div>
+  <div class="live-ink-output" id="live-ink-output">
+    <div class="live-ink-prompt">Select a node and click Test, or right-click a node to test from that point.</div>
+  </div>
+</div>`;
+
+const dinkyRegex = /^(\s*)([A-Z0-9_]+)(\s*)(\(.*?\)|)(\s*)(:)(\s*)(\(.*?\)|)(\s*)((?:[^/#]|\/(?![/*]))*)/;
+
+/**
+ * Computes the Ink path string for a given node.
+ */
+function nodeIdToPath(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): string {
+  if (nodeType === 'knot') return nodeId;
+  const parentKnot = knotName || nodeId.split('.')[0];
+  const stitchName = nodeId.includes('.') ? nodeId.split('.').slice(1).join('.') : nodeId;
+  return `${parentKnot}.${stitchName}`;
+}
+
+/**
+ * Starts a Live Ink test from the given node, switching to the Live Ink tab.
+ */
+function startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): void {
+  if (!currentStoryJson) return;
+  currentStartNode = nodeIdToPath(nodeId, nodeType, knotName);
+  switchTab('live-ink');
+  startLiveInk(currentStoryJson, currentStartNode);
+}
+
+function initLiveInk(): void {
+  const testBtn = document.getElementById('live-ink-test');
+  const restartBtn = document.getElementById('live-ink-restart');
+  const backBtn = document.getElementById('live-ink-back');
+  if (testBtn) {
+    testBtn.onclick = (e) => {
+      e.preventDefault();
+      if (!currentStoryJson) return;
+      // Use the currently selected graph node as the starting point
+      const selectedId = currentGraphController?.getSelectedNodeId();
+      if (selectedId) {
+        // Determine node type from the id (knot ids have no dot, stitch ids are knot.stitch)
+        const isStitch = selectedId.includes('.');
+        const nodeType = isStitch ? 'stitch' : 'knot';
+        const knotName = isStitch ? selectedId.split('.')[0] : undefined;
+        startTestFromNode(selectedId, nodeType, knotName);
+      } else {
+        // No node selected — start from beginning
+        currentStartNode = null;
+        startLiveInk(currentStoryJson, null);
+      }
+    };
+  }
+  if (restartBtn) {
+    restartBtn.onclick = (e) => {
+      e.preventDefault();
+      if (currentStoryJson) startLiveInk(currentStoryJson, currentStartNode);
+    };
+  }
+  if (backBtn) {
+    backBtn.onclick = (e) => {
+      e.preventDefault();
+      liveInkGoBack();
+    };
+  }
+}
+
+function updateLiveInkButtons(): void {
+  const backBtn = document.getElementById('live-ink-back');
+  if (backBtn) {
+    if (liveInkStateStack.length <= 1) {
+      backBtn.classList.add('disabled');
+    } else {
+      backBtn.classList.remove('disabled');
+    }
+  }
+}
+
+function startLiveInk(storyJson: string, startPath?: string | null): void {
+  const output = document.getElementById('live-ink-output');
+  const status = document.getElementById('live-ink-status');
+  if (!output) return;
+
+  output.innerHTML = '';
+  liveInkStateStack = [];
+  liveInkCurrentTurn = null;
+  liveInkIsDinkMode = false;
+
+  updateLiveInkButtons();
+
+  if (status) {
+    status.textContent = startPath ? `Testing: ${startPath}` : 'Testing from start';
+  }
+
+  try {
+    const json = typeof storyJson === 'string' ? JSON.parse(storyJson) : storyJson;
+    liveInkStory = new Story(json);
+
+    // Detect Dink mode via global tags
+    if (liveInkStory.globalTags && liveInkStory.globalTags.some((tag: string) => tag.trim() === 'dink')) {
+      liveInkIsDinkMode = true;
+    }
+
+    if (startPath) {
+      try {
+        // Check knot tags for dink mode
+        if (!liveInkIsDinkMode) {
+          const tags = liveInkStory.TagsForContentAtPath(startPath);
+          if (tags && tags.some((tag: string) => tag.trim() === 'dink')) {
+            liveInkIsDinkMode = true;
+          }
+        }
+        liveInkStory.ChoosePathString(startPath);
+      } catch (e) {
+        const p = document.createElement('p');
+        p.style.color = 'orange';
+        p.textContent = `Warning: Could not find "${startPath}". Starting from beginning.`;
+        output.appendChild(p);
+      }
+    }
+
+    continueLiveInk();
+  } catch (e) {
+    const p = document.createElement('p');
+    p.style.color = 'red';
+    p.textContent = 'Runtime Error: ' + (e instanceof Error ? e.message : String(e));
+    output.appendChild(p);
+
+  }
+}
+
+function continueLiveInk(): void {
+  if (!liveInkStory) return;
+  const output = document.getElementById('live-ink-output');
+  if (!output) return;
+
+  liveInkCurrentTurn = document.createElement('div');
+  liveInkCurrentTurn.className = 'turn';
+  output.appendChild(liveInkCurrentTurn);
+
+  while (liveInkStory.canContinue) {
+    const text = liveInkStory.Continue();
+    if (!text) continue;
+    const p = document.createElement('p');
+
+    if (liveInkIsDinkMode) {
+      const match = text.match(dinkyRegex);
+      if (match) {
+        let html = '';
+        html += escapeHtml(match[1]);
+        html += `<span class="dinky-name">${escapeHtml(match[2])}</span>`;
+        html += escapeHtml(match[3]);
+        if (match[4]) html += `<span class="dinky-qualifier">${escapeHtml(match[4])}</span>`;
+        html += escapeHtml(match[5]);
+        html += escapeHtml(match[6]);
+        html += escapeHtml(match[7]);
+        if (match[8]) html += `<span class="dinky-direction">${escapeHtml(match[8])}</span>`;
+        html += escapeHtml(match[9]);
+        html += `<span class="dinky-text">${escapeHtml(match[10])}</span>`;
+        p.innerHTML = html;
+      } else {
+        p.textContent = text;
+      }
+    } else {
+      p.textContent = text;
+    }
+
+    liveInkCurrentTurn.appendChild(p);
+  }
+
+  // Save state for back navigation
+  const state = liveInkStory.state.toJson();
+  liveInkStateStack.push({ state, turnElement: liveInkCurrentTurn });
+  updateLiveInkButtons();
+
+  if (liveInkStory.currentChoices.length > 0) {
+    renderLiveInkChoices();
+  } else {
+    const endP = document.createElement('p');
+    endP.innerHTML = '<em>End of story</em>';
+    endP.style.textAlign = 'center';
+    endP.style.marginTop = '40px';
+    liveInkCurrentTurn.appendChild(endP);
+    endP.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function renderLiveInkChoices(): void {
+  if (!liveInkStory || !liveInkCurrentTurn) return;
+
+  // Clear existing choices in this turn
+  liveInkCurrentTurn.querySelectorAll('.choice').forEach(c => c.remove());
+
+  liveInkStory.currentChoices.forEach((choice: any, index: number) => {
+    const p = document.createElement('p');
+    p.className = 'choice';
+    const a = document.createElement('a');
+    a.href = '#';
+    a.textContent = choice.text;
+    a.onclick = (e) => {
+      e.preventDefault();
+      if (!liveInkStory) return;
+      liveInkStory.ChooseChoiceIndex(index);
+      // Remove choices before continuing
+      if (liveInkCurrentTurn) {
+        liveInkCurrentTurn.querySelectorAll('.choice').forEach(c => c.remove());
+      }
+      continueLiveInk();
+    };
+    p.appendChild(a);
+    liveInkCurrentTurn!.appendChild(p);
+  });
+
+  // Scroll last choice into view
+  const lastChoice = liveInkCurrentTurn.querySelector('.choice:last-child');
+  if (lastChoice) lastChoice.scrollIntoView({ behavior: 'smooth' });
+}
+
+function liveInkGoBack(): void {
+  if (liveInkStateStack.length === 0) return;
+
+  const currentStep = liveInkStateStack.pop()!;
+  if (currentStep.turnElement && currentStep.turnElement.parentNode) {
+    currentStep.turnElement.remove();
+  }
+
+  if (liveInkStateStack.length === 0) {
+    // Stack empty — restart
+    if (currentStoryJson) startLiveInk(currentStoryJson, currentStartNode);
+    return;
+  }
+
+  const prevState = liveInkStateStack[liveInkStateStack.length - 1];
+  try {
+    if (liveInkStory) {
+      liveInkStory.state.LoadJson(prevState.state);
+    }
+  } catch (e) {
+    console.error('Failed to restore state:', e);
+  }
+
+  liveInkCurrentTurn = prevState.turnElement;
+  renderLiveInkChoices();
+  updateLiveInkButtons();
+}
+
 // Set up listener for Ink compilation results from main process
 function setupCompileResultListener(): void {
   window.api.onCompileResult((result) => {
@@ -323,6 +603,7 @@ function setupCompileResultListener(): void {
       structureOutput.innerHTML = ''; // Clear previous content
       currentGraphController = createGraphVisualization('structure-output', result.structure, {
         onNodeClick: handleNodeClick,
+        onNodeTest: startTestFromNode,
         onTransformChange: debouncedSaveTransform,
         initialTransform: savedState?.graphTransform || undefined,
         initialSelectedNodeId: savedState?.selectedNodeId
@@ -376,6 +657,12 @@ function setupCompileResultListener(): void {
         structureHTML += '</div>';
       }
 
+      // Store story JSON for Live Ink
+      const ipcAny = result as any;
+      currentStoryJson = ipcAny.storyJson || null;
+      currentStartNode = null;
+  
+
       // Create tabs
       createTabs([
         {
@@ -383,8 +670,17 @@ function setupCompileResultListener(): void {
           label: 'Structure',
           content: structureHTML,
           type: 'html'
+        },
+        {
+          id: 'live-ink',
+          label: 'Live Ink',
+          content: LIVE_INK_HTML,
+          type: 'html'
         }
       ]);
+
+      // Wire up Live Ink buttons after DOM insertion
+      initLiveInk();
 
     } else {
       console.error('❌ Ink compilation failed!');
@@ -398,6 +694,10 @@ function setupCompileResultListener(): void {
       currentSourceFiles = null;
       currentFilePath = null;
       currentGraphController = null;
+      currentStoryJson = null;
+      currentStartNode = null;
+  
+      liveInkStory = null;
       hideCodePane();
 
       // Show error state

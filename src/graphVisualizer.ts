@@ -102,6 +102,7 @@ function structureToGraph(structure: StoryStructure): Graph {
 
 export interface GraphOptions {
   onNodeClick?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void;
+  onNodeTest?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void;
   onTransformChange?: (transform: { x: number; y: number; k: number }) => void;
   initialTransform?: { x: number; y: number; k: number };
   initialSelectedNodeId?: string | null;
@@ -123,6 +124,7 @@ export function createGraphVisualization(
   options?: GraphOptions
 ): GraphController | null {
   const onNodeClick = options?.onNodeClick;
+  const onNodeTest = options?.onNodeTest;
   const container = document.getElementById(containerId);
   if (!container) {
     console.error(`Container ${containerId} not found`);
@@ -803,6 +805,49 @@ export function createGraphVisualization(
     return { x, y };
   };
 
+  // Context menu for right-click "Test" on nodes
+  let contextMenuEl: HTMLDivElement | null = null;
+
+  function hideContextMenu() {
+    if (contextMenuEl && contextMenuEl.parentNode) {
+      contextMenuEl.remove();
+    }
+    contextMenuEl = null;
+  }
+
+  function showContextMenu(x: number, y: number, d: GraphNode) {
+    hideContextMenu();
+
+    contextMenuEl = document.createElement('div');
+    contextMenuEl.className = 'graph-context-menu';
+    contextMenuEl.style.left = `${x}px`;
+    contextMenuEl.style.top = `${y}px`;
+
+    const testItem = document.createElement('div');
+    testItem.className = 'graph-context-menu-item';
+    testItem.textContent = `Test "${d.label}"`;
+    testItem.onclick = () => {
+      hideContextMenu();
+      if (onNodeTest) {
+        onNodeTest(d.id, d.type, d.knotName);
+      }
+    };
+
+    contextMenuEl.appendChild(testItem);
+    document.body.appendChild(contextMenuEl);
+
+    // Dismiss on click elsewhere
+    const dismissHandler = () => {
+      hideContextMenu();
+      document.removeEventListener('click', dismissHandler);
+    };
+    // Defer so the current event doesn't immediately dismiss
+    setTimeout(() => document.addEventListener('click', dismissHandler), 0);
+  }
+
+  // Dismiss context menu on scroll/zoom
+  svg.on('mousedown.contextmenu', hideContextMenu);
+
   // Function to update the visualization
   function updateVisualization() {
     // Group nodes by knot for positioning
@@ -1013,6 +1058,15 @@ export function createGraphVisualization(
 
               selectedNodeId = d.id;
               onNodeClick(d.id, d.type, d.knotName);
+            });
+          }
+
+          // Add right-click context menu
+          if (onNodeTest) {
+            nodeEnter.on('contextmenu', (event: MouseEvent, d: GraphNode) => {
+              event.preventDefault();
+              event.stopPropagation();
+              showContextMenu(event.clientX, event.clientY, d);
             });
           }
 
