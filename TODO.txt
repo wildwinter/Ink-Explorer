@@ -1,5 +1,4 @@
 TODO:
-Remove icons.
 Themes
 Test different include paths.
 Test tunnels
@@ -25,3 +24,4 @@ Maintain window and focused node per starting file.
 Position unconnected groups further away.
 Add minimap.
 Syntax colouring.
+Remove icons.

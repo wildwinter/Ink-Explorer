@@ -993,16 +993,6 @@ export function createGraphVisualization(
             .style('pointer-events', 'none')
             .style('user-select', 'none');
 
-          // Add type indicator (small icon in top-left corner)
-          nodeEnter.append('text')
-            .attr('class', 'node-icon')
-            .attr('x', -42)
-            .attr('y', -15)
-            .attr('text-anchor', 'start')
-            .attr('font-size', '12px')
-            .text(d => d.type === 'knot' ? '📦' : '📎')
-            .style('pointer-events', 'none');
-
           // Add tooltip
           nodeEnter.append('title')
             .text(d => d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
@@ -1235,7 +1225,7 @@ export function createGraphVisualization(
   legend.append('rect')
     .attr('x', -8)
     .attr('y', 17)
-    .attr('width', 30)
+    .attr('width', 35)
     .attr('height', 16)
     .attr('rx', 4)
     .attr('ry', 4)
