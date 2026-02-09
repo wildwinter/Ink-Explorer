@@ -1,10 +1,10 @@
 TODO:
-BUG: Doesn't show included Ink file content.
 Syntax colouring.
 Maintain window and focused node per starting file.
 Try to position unconnected groups further away.
 Remove icons.
 Themes
+Test different include paths.
 Test tunnels
 Test more complex Ink if you can find some.
 
@@ -22,3 +22,4 @@ Add stress testing.
 DONE:
 Remove the old panes.
 Fix to click and drag.
+BUG: Doesn't show included Ink file content.

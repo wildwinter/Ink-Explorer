@@ -19,8 +19,15 @@ async function compileAndLogInk(inkFilePath: string): Promise<void> {
   const result = await compileInk(inkFilePath);
 
   // Send result to renderer for logging
+  // Convert sourceFiles Map to plain object for reliable IPC serialization
   if (mainWindow) {
-    mainWindow.webContents.send('ink-compile-result', result);
+    const serializable = {
+      ...result,
+      sourceFiles: result.sourceFiles
+        ? Object.fromEntries(result.sourceFiles)
+        : undefined
+    };
+    mainWindow.webContents.send('ink-compile-result', serializable);
   }
 
   // Add to recent files if compilation succeeded

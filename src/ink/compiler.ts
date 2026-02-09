@@ -31,9 +31,9 @@ function parseKnotOrder(inkContent: string): string[] {
   const lines = inkContent.split('\n');
 
   for (const line of lines) {
-    // Match knot declarations: === KnotName ===
-    // Knots start with === followed by name, optionally followed by more ===
-    const knotMatch = line.match(/^===\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*={0,3}\s*$/);
+    // Match knot declarations: == KnotName or === KnotName ===
+    // Knots start with 2+ equals signs followed by name, optionally followed by more ===
+    const knotMatch = line.match(/^={2,}\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*={0,3}\s*$/);
     if (knotMatch) {
       knotNames.push(knotMatch[1]);
     }

@@ -128,8 +128,8 @@ function showEmptyState(): void {
  * Extracts the source code for a knot (including all its stitches) from the raw Ink source files.
  */
 function extractKnotSource(knotName: string, sourceFiles: Map<string, string>): { source: string; filename: string } | null {
-  const knotPattern = new RegExp(`^===\\s+${escapeRegExp(knotName)}\\s*={0,3}\\s*$`, 'm');
-  const nextKnotPattern = /^===\s+[a-zA-Z_][a-zA-Z0-9_]*\s*={0,3}\s*$/m;
+  const knotPattern = new RegExp(`^={2,}\\s*${escapeRegExp(knotName)}\\s*={0,3}\\s*$`, 'm');
+  const nextKnotPattern = /^={2,}\s*[a-zA-Z_][a-zA-Z0-9_]*\s*={0,3}\s*$/m;
 
   for (const [filename, content] of sourceFiles) {
     const match = knotPattern.exec(content);
@@ -156,14 +156,14 @@ function extractStitchSource(knotName: string, stitchName: string, sourceFiles: 
   if (!knotResult) return null;
 
   const { source: knotSource, filename } = knotResult;
-  const stitchPattern = new RegExp(`^=\\s+${escapeRegExp(stitchName)}\\s*$`, 'm');
+  const stitchPattern = new RegExp(`^=(?!=)\\s*${escapeRegExp(stitchName)}\\s*$`, 'm');
   const match = stitchPattern.exec(knotSource);
   if (!match) return null;
 
   const startIndex = match.index;
   const rest = knotSource.substring(startIndex + match[0].length);
   // Next stitch or end of knot
-  const nextStitchPattern = /^=\s+[a-zA-Z_][a-zA-Z0-9_]*\s*$/m;
+  const nextStitchPattern = /^=(?!=)\s*[a-zA-Z_][a-zA-Z0-9_]*\s*$/m;
   const nextMatch = nextStitchPattern.exec(rest);
   if (nextMatch) {
     return { source: knotSource.substring(startIndex, startIndex + match[0].length + nextMatch.index).trimEnd(), filename };
@@ -264,7 +264,13 @@ function setupCompileResultListener(): void {
       console.log('\nStructure:', result.structure);
 
       // Store source files for code pane extraction
-      currentSourceFiles = result.sourceFiles || null;
+      // sourceFiles arrives as a plain object from IPC serialization, convert to Map
+      if (result.sourceFiles) {
+        const files = result.sourceFiles as unknown as Record<string, string>;
+        currentSourceFiles = files instanceof Map ? files : new Map(Object.entries(files));
+      } else {
+        currentSourceFiles = null;
+      }
       showCodePanePrompt();
 
       // Display interactive graph in left pane
