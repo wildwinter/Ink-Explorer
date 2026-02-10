@@ -201,6 +201,24 @@ function extractStitchSource(knotName: string, stitchName: string, sourceFiles: 
   return { source: knotSource.substring(startIndex).trimEnd(), filename };
 }
 
+/**
+ * Extracts root content (everything before the first knot or stitch) from each source file.
+ */
+function extractRootSource(sourceFiles: Map<string, string>): string {
+  const firstKnotOrStitch = /^={1,3}\s*[a-zA-Z_][a-zA-Z0-9_]*\s*={0,3}\s*$/m;
+  const sections: string[] = [];
+
+  for (const [filename, content] of sourceFiles) {
+    const match = firstKnotOrStitch.exec(content);
+    const preamble = match ? content.substring(0, match.index).trimEnd() : content.trimEnd();
+    if (preamble.length > 0) {
+      sections.push(`// --------- ${filename} ---------\n${preamble}\n`);
+    }
+  }
+
+  return sections.join('\n');
+}
+
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -267,13 +285,23 @@ function toggleCodePane(): void {
 /**
  * Handles a node click from the graph visualizer.
  */
-function handleNodeClick(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): void {
+function handleNodeClick(nodeId: string, nodeType: 'knot' | 'stitch' | 'root', knotName?: string): void {
   if (!currentSourceFiles) return;
 
   let result: { source: string; filename: string } | null;
   let label: string;
 
-  if (nodeType === 'knot') {
+  if (nodeType === 'root') {
+    label = 'Root';
+    const rootSource = extractRootSource(currentSourceFiles);
+    if (rootSource) {
+      showCodePane(label, rootSource);
+    } else {
+      showCodePane(label, 'No root content found');
+    }
+    saveCurrentFileState();
+    return;
+  } else if (nodeType === 'knot') {
     label = `Knot: ${nodeId}`;
     result = extractKnotSource(nodeId, currentSourceFiles);
   } else {
@@ -340,7 +368,8 @@ const dinkyRegex = /^(\s*)([A-Z0-9_]+)(\s*)(\(.*?\)|)(\s*)(:)(\s*)(\(.*?\)|)(\s*
 /**
  * Computes the Ink path string for a given node.
  */
-function nodeIdToPath(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): string {
+function nodeIdToPath(nodeId: string, nodeType: 'knot' | 'stitch' | 'root', knotName?: string): string | null {
+  if (nodeType === 'root') return null;
   if (nodeType === 'knot') return nodeId;
   const parentKnot = knotName || nodeId.split('.')[0];
   const stitchName = nodeId.includes('.') ? nodeId.split('.').slice(1).join('.') : nodeId;
@@ -377,7 +406,7 @@ function updateCurrentNodeHighlight(): void {
 /**
  * Starts a Live Ink test from the given node, switching to the Live Ink tab.
  */
-function startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): void {
+function startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch' | 'root', knotName?: string): void {
   if (!currentStoryJson) return;
   currentStartNode = nodeIdToPath(nodeId, nodeType, knotName);
   switchTab('live-ink');
@@ -395,11 +424,15 @@ function initLiveInk(): void {
       // Use the currently selected graph node as the starting point
       const selectedId = currentGraphController?.getSelectedNodeId();
       if (selectedId) {
-        // Determine node type from the id (knot ids have no dot, stitch ids are knot.stitch)
-        const isStitch = selectedId.includes('.');
-        const nodeType = isStitch ? 'stitch' : 'knot';
-        const knotName = isStitch ? selectedId.split('.')[0] : undefined;
-        startTestFromNode(selectedId, nodeType, knotName);
+        // Determine node type from the id
+        if (selectedId === '__root__') {
+          startTestFromNode(selectedId, 'root');
+        } else {
+          const isStitch = selectedId.includes('.');
+          const nodeType = isStitch ? 'stitch' : 'knot';
+          const knotName = isStitch ? selectedId.split('.')[0] : undefined;
+          startTestFromNode(selectedId, nodeType, knotName);
+        }
       } else {
         // No node selected — start from beginning
         currentStartNode = null;

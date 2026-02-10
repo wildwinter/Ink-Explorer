@@ -13,7 +13,7 @@ function cssVar(name: string): string {
 interface GraphNode {
   id: string;
   label: string;
-  type: 'knot' | 'stitch';
+  type: 'knot' | 'stitch' | 'root';
   knotName?: string; // For stitches, track which knot they belong to
   x?: number;
   y?: number;
@@ -32,6 +32,12 @@ interface Graph {
   links: GraphLink[];
 }
 
+function getNodeFill(type: NodeType): string {
+  if (type === 'root') return cssVar('--graph-root-fill');
+  if (type === 'stitch') return cssVar('--graph-stitch-fill');
+  return cssVar('--graph-knot-fill');
+}
+
 /**
  * Converts story structure to graph format
  */
@@ -39,6 +45,12 @@ function structureToGraph(structure: StoryStructure): Graph {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   const nodeIds = new Set<string>();
+
+  // Create root node if there are root-level exits
+  if (structure.rootExits && structure.rootExits.length > 0) {
+    nodes.push({ id: '__root__', label: 'Root', type: 'root' });
+    nodeIds.add('__root__');
+  }
 
   // Create nodes for all knots and stitches
   structure.knots.forEach((knot: KnotInfo) => {
@@ -100,13 +112,24 @@ function structureToGraph(structure: StoryStructure): Graph {
     });
   });
 
+  // Add links from root exits
+  if (structure.rootExits && nodeIds.has('__root__')) {
+    structure.rootExits.forEach((targetName: string) => {
+      if (nodeIds.has(targetName)) {
+        links.push({ source: '__root__', target: targetName, isConditional: false });
+      }
+    });
+  }
+
   return { nodes, links };
 }
 
 
+type NodeType = 'knot' | 'stitch' | 'root';
+
 export interface GraphOptions {
-  onNodeClick?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void;
-  onNodeTest?: (nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string) => void;
+  onNodeClick?: (nodeId: string, nodeType: NodeType, knotName?: string) => void;
+  onNodeTest?: (nodeId: string, nodeType: NodeType, knotName?: string) => void;
   onTransformChange?: (transform: { x: number; y: number; k: number }) => void;
   initialTransform?: { x: number; y: number; k: number };
   initialSelectedNodeId?: string | null;
@@ -212,7 +235,7 @@ export function createGraphVisualization(
     const reverseAdjacency = new Map<string, Set<string>>();
 
     graph.nodes.forEach(n => {
-      if (n.type === 'knot') {
+      if (n.type === 'knot' || n.type === 'root') {
         adjacency.set(n.id, new Set());
         reverseAdjacency.set(n.id, new Set());
       }
@@ -227,8 +250,8 @@ export function createGraphVisualization(
       const targetNode = graph.nodes.find(n => n.id === targetId);
 
       if (sourceNode && targetNode) {
-        const sourceKnot = sourceNode.type === 'knot' ? sourceNode.id : sourceNode.knotName;
-        const targetKnot = targetNode.type === 'knot' ? targetNode.id : targetNode.knotName;
+        const sourceKnot = (sourceNode.type === 'knot' || sourceNode.type === 'root') ? sourceNode.id : sourceNode.knotName;
+        const targetKnot = (targetNode.type === 'knot' || targetNode.type === 'root') ? targetNode.id : targetNode.knotName;
 
         if (sourceKnot && targetKnot && sourceKnot !== targetKnot) {
           adjacency.get(sourceKnot)?.add(targetKnot);
@@ -242,13 +265,15 @@ export function createGraphVisualization(
     const visited = new Set<string>();
     const queue: Array<{ id: string; depth: number }> = [];
 
-    // Start with the first knot in the structure (assume it's the entry point)
-    const knots = graph.nodes.filter(n => n.type === 'knot');
-    if (knots.length > 0) {
-      const firstKnot = knots[0];
-      queue.push({ id: firstKnot.id, depth: 0 });
-      visited.add(firstKnot.id);
-      depths.set(firstKnot.id, 0);
+    // Knots and root are laid out at the top level
+    const knots = graph.nodes.filter(n => n.type === 'knot' || n.type === 'root');
+
+    // Start BFS from root node if present, otherwise from the first knot
+    const startNode = knots.find(n => n.type === 'root') || knots[0];
+    if (startNode) {
+      queue.push({ id: startNode.id, depth: 0 });
+      visited.add(startNode.id);
+      depths.set(startNode.id, 0);
     }
 
     // BFS to assign depths - follow both forward and reverse edges
@@ -1050,7 +1075,7 @@ export function createGraphVisualization(
             .attr('y', -25)
             .attr('rx', 8)
             .attr('ry', 8)
-            .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+            .attr('fill', d => getNodeFill(d.type))
             .attr('stroke', cssVar('--graph-node-stroke'))
             .attr('stroke-width', 2)
             .style('cursor', 'pointer');
@@ -1070,7 +1095,7 @@ export function createGraphVisualization(
 
           // Add tooltip
           nodeEnter.append('title')
-            .text(d => d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
+            .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
 
           // Add click handler (only fires if not dragging)
           if (onNodeClick) {
@@ -1282,7 +1307,7 @@ export function createGraphVisualization(
     .attr('x', -10)
     .attr('y', -10)
     .attr('width', 150)
-    .attr('height', 50)
+    .attr('height', 75)
     .attr('fill', cssVar('--graph-legend-bg'))
     .attr('rx', 5);
 
@@ -1323,6 +1348,25 @@ export function createGraphVisualization(
     .attr('fill', cssVar('--graph-legend-text'))
     .attr('font-size', '11px')
     .text('Stitch');
+
+  // Root legend
+  legend.append('rect')
+    .attr('x', -8)
+    .attr('y', 42)
+    .attr('width', 35)
+    .attr('height', 16)
+    .attr('rx', 4)
+    .attr('ry', 4)
+    .attr('fill', cssVar('--graph-root-fill'))
+    .attr('stroke', cssVar('--graph-node-stroke'))
+    .attr('stroke-width', 1);
+
+  legend.append('text')
+    .attr('x', 35)
+    .attr('y', 55)
+    .attr('fill', cssVar('--graph-legend-text'))
+    .attr('font-size', '11px')
+    .text('Root');
 
   // Initial render
   updateVisualization();
@@ -1367,7 +1411,7 @@ export function createGraphVisualization(
     .attr('width', 8)
     .attr('height', 4)
     .attr('rx', 1)
-    .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
+    .attr('fill', d => getNodeFill(d.type));
 
   // Viewport rectangle (shows current visible area)
   const viewportRect = minimapSvg.append('rect')
@@ -1533,7 +1577,7 @@ export function createGraphVisualization(
         currentHighlightedNodeId = null;
         currentHighlight.style('display', 'none');
         // Reset minimap node colours
-        minimapNodeSel.attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
+        minimapNodeSel.attr('fill', d => getNodeFill(d.type));
         return;
       }
       const targetNode = graph.nodes.find(n => n.id === nodeId);
@@ -1547,7 +1591,7 @@ export function createGraphVisualization(
       minimapNodeSel.attr('fill', d =>
         d.id === nodeId
           ? cssVar('--graph-current-arrow')
-          : d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill')
+          : getNodeFill(d.type)
       );
     },
     updateColors(): void {
@@ -1563,7 +1607,7 @@ export function createGraphVisualization(
 
       // Node rects
       nodesLayer.selectAll<SVGRectElement, GraphNode>('.node-rect')
-        .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+        .attr('fill', d => getNodeFill(d.type))
         .attr('stroke', function () {
           return d3.select(this).attr('stroke-width') === '3'
             ? cssVar('--graph-selected-stroke')
@@ -1575,11 +1619,12 @@ export function createGraphVisualization(
 
       // Legend
       legend.select('rect').attr('fill', cssVar('--graph-legend-bg'));
+      const legendFills = [cssVar('--graph-knot-fill'), cssVar('--graph-stitch-fill'), cssVar('--graph-root-fill')];
       legend.selectAll<SVGRectElement, unknown>('rect')
         .filter(function () { return this !== legend.select('rect').node(); })
         .each(function (_, i) {
           d3.select(this)
-            .attr('fill', i === 0 ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+            .attr('fill', legendFills[i] || cssVar('--graph-knot-fill'))
             .attr('stroke', cssVar('--graph-node-stroke'));
         });
       legend.selectAll('text').attr('fill', cssVar('--graph-legend-text'));
@@ -1590,7 +1635,7 @@ export function createGraphVisualization(
       minimapNodeSel.attr('fill', d =>
         currentHighlightedNodeId && d.id === currentHighlightedNodeId
           ? cssVar('--graph-current-arrow')
-          : d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill')
+          : getNodeFill(d.type)
       );
       viewportRect.attr('fill', cssVar('--graph-minimap-viewport-fill')).attr('stroke', cssVar('--graph-minimap-viewport-stroke'));
     }

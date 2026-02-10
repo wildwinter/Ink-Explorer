@@ -2,9 +2,8 @@ TODO:
 -----
 Test more complex Ink if you can find some.
 
-Add simulation callout.
-
 Add a root node.
+Add fading visit
 
 Add variable tracking.
 Add loading/saving test sets of variables.
@@ -29,3 +28,4 @@ Parse and markup Dink
 Themes
 Test different include paths.
 Test tunnels
+Add simulation callout.

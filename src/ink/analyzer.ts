@@ -25,6 +25,7 @@ export interface KnotInfo {
 
 export interface StoryStructure {
   knots: KnotInfo[];
+  rootExits: string[];
   diverts: DivertInfo[];
 }
 
@@ -137,12 +138,23 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
 export function extractStoryStructure(story: Story): StoryStructure {
   const structure: StoryStructure = {
     knots: [],
+    rootExits: [],
     diverts: []
   };
 
   try {
     // Access the main content container which holds all knots
     const mainContainer = story.mainContentContainer;
+
+    if (mainContainer) {
+      // Extract root-level diverts (content before the first knot)
+      const rootDiverts = findDiverts(mainContainer.content, []);
+      const rootExits = rootDiverts
+        .filter(d => d.source === 'root')
+        .map(d => d.target);
+      structure.rootExits = [...new Set(rootExits)];
+      structure.diverts.push(...rootDiverts.filter(d => d.source === 'root'));
+    }
 
     if (mainContainer && mainContainer.namedContent) {
       // Iterate through all named content (knots)
