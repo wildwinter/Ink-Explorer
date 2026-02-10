@@ -26,6 +26,9 @@ let currentFilePath: string | null = null;
 let currentGraphController: GraphController | null = null;
 let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// All knot/stitch path strings from the story structure (for visit-count tracking)
+let storyNodePaths: string[] = [];
+
 // Live Ink state
 let currentStoryJson: string | null = null;
 let currentStartNode: string | null = null;
@@ -391,6 +394,8 @@ function pathToNodeId(pathStr: string): string | null {
 
 // Tracks the last known graph-node ID seen during Live Ink execution.
 let liveInkCurrentNodeId: string | null = null;
+let liveInkPreviousNodeId: string | null = null;
+let liveInkVisitedNodes: Map<string, number> = new Map();
 
 function centreOnCurrentNode(): void {
   if (!currentGraphController || !liveInkCurrentNodeId) return;
@@ -399,7 +404,33 @@ function centreOnCurrentNode(): void {
 
 function updateCurrentNodeHighlight(): void {
   if (!currentGraphController) return;
-  currentGraphController.highlightCurrentNode(liveInkCurrentNodeId);
+
+  // If the current node changed, update visited-node tracking
+  if (liveInkCurrentNodeId !== liveInkPreviousNodeId) {
+    // Fade all existing visited nodes by 5%
+    for (const [id, opacity] of liveInkVisitedNodes) {
+      const next = opacity - 0.10;
+      if (next <= 0) {
+        liveInkVisitedNodes.delete(id);
+      } else {
+        liveInkVisitedNodes.set(id, next);
+      }
+    }
+
+    // Previous current node becomes visited at 75%
+    if (liveInkPreviousNodeId) {
+      liveInkVisitedNodes.set(liveInkPreviousNodeId, 0.75);
+    }
+
+    // Current node shouldn't appear in the visited set
+    if (liveInkCurrentNodeId) {
+      liveInkVisitedNodes.delete(liveInkCurrentNodeId);
+    }
+
+    liveInkPreviousNodeId = liveInkCurrentNodeId;
+  }
+
+  currentGraphController.highlightCurrentNode(liveInkCurrentNodeId, liveInkVisitedNodes);
   if (liveInkFollowEnabled) centreOnCurrentNode();
 }
 
@@ -497,6 +528,8 @@ function startLiveInk(storyJson: string, startPath?: string | null): void {
   liveInkCurrentTurn = null;
   liveInkIsDinkMode = false;
   liveInkCurrentNodeId = null;
+  liveInkPreviousNodeId = null;
+  liveInkVisitedNodes.clear();
 
   updateLiveInkButtons();
   if (currentGraphController) currentGraphController.highlightCurrentNode(null);
@@ -530,6 +563,10 @@ function startLiveInk(storyJson: string, startPath?: string | null): void {
         p.textContent = `Warning: Could not find "${startPath}". Starting from beginning.`;
         output.appendChild(p);
       }
+    } else {
+      // Starting from the beginning — set root as the initial node
+      // so it gets tracked as visited when the story advances
+      liveInkCurrentNodeId = '__root__';
     }
 
     continueLiveInk();
@@ -550,6 +587,20 @@ function continueLiveInk(): void {
   liveInkCurrentTurn = document.createElement('div');
   liveInkCurrentTurn.className = 'turn';
   output.appendChild(liveInkCurrentTurn);
+
+  // Snapshot visit counts before processing so we can detect every
+  // knot/stitch the story passes through — even within a single Continue() call.
+  const visitCountsBefore = new Map<string, number>();
+  for (const nodePath of storyNodePaths) {
+    visitCountsBefore.set(nodePath, liveInkStory.state.VisitCountAtPathString(nodePath) || 0);
+  }
+
+  // Seed the previous node (e.g. __root__) so it is tracked as visited
+  // if the story advances past it during this call.
+  const seenNodeIds: string[] = [];
+  if (liveInkCurrentNodeId) {
+    seenNodeIds.push(liveInkCurrentNodeId);
+  }
 
   // Capture current position before the loop — handles knots that start
   // directly with choices (no text content), where canContinue is already false.
@@ -618,6 +669,24 @@ function continueLiveInk(): void {
     if (finalPath) {
       const parsed = pathToNodeId(finalPath);
       if (parsed) liveInkCurrentNodeId = parsed;
+    }
+  }
+
+  // Compare visit counts to reliably detect every knot/stitch the story
+  // passed through — even ones traversed entirely within a single Continue().
+  for (const nodePath of storyNodePaths) {
+    const before = visitCountsBefore.get(nodePath) || 0;
+    const after = liveInkStory.state.VisitCountAtPathString(nodePath) || 0;
+    if (after > before && !seenNodeIds.includes(nodePath)) {
+      seenNodeIds.push(nodePath);
+    }
+  }
+
+  // Add intermediate nodes (ones the story passed through but isn't on now)
+  // to the visited set so they get a fading highlight
+  for (const id of seenNodeIds) {
+    if (id !== liveInkCurrentNodeId && !liveInkVisitedNodes.has(id)) {
+      liveInkVisitedNodes.set(id, 0.75);
     }
   }
 
@@ -765,6 +834,20 @@ function setupCompileResultListener(): void {
       const ipcAny = result as any;
       currentStoryJson = ipcAny.storyJson || null;
       currentStartNode = null;
+
+      // Build list of knot/stitch path strings for visit-count tracking
+      const struct = result.structure as any;
+      storyNodePaths = [];
+      if (struct && struct.knots) {
+        for (const knot of struct.knots) {
+          storyNodePaths.push(knot.name);
+          if (knot.stitches) {
+            for (const stitch of knot.stitches) {
+              storyNodePaths.push(`${knot.name}.${stitch.name}`);
+            }
+          }
+        }
+      }
   
 
       // Create tabs

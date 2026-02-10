@@ -99,7 +99,9 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
     const compiler = new Compiler(inkContent, {
       sourceFilename: inkFilePath,
       fileHandler: fileHandler,
-      errorHandler: errorHandling.handler
+      errorHandler: errorHandling.handler,
+      // @ts-ignore - countAllVisits is supported by inkjs but missing from types
+      countAllVisits: true
     });
 
     // Compile - this may call errorHandler multiple times

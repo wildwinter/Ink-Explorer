@@ -141,7 +141,7 @@ export interface GraphController {
   getSelectedNodeId(): string | null;
   selectNode(nodeId: string): void;
   updateColors(): void;
-  highlightCurrentNode(nodeId: string | null): void;
+  highlightCurrentNode(nodeId: string | null, visited?: Map<string, number>): void;
   centreOnNode(nodeId: string): void;
 }
 
@@ -202,18 +202,22 @@ export function createGraphVisualization(
   const linksLayer = g.append('g').attr('class', 'links');
   const nodesLayer = g.append('g').attr('class', 'nodes');
 
-  // Current-node indicator (red rounded-rect border behind everything)
+  // Visited-node highlights (fading red borders behind everything)
+  const visitedHighlightsGroup = g.insert('g', '.links')
+    .attr('class', 'visited-highlights');
+  let visitedNodeMap: Map<string, number> = new Map();
+
+  // Current-node indicator — filled rect larger than the node, drawn behind it
   const currentHighlight = g.insert('rect', '.links')
     .attr('class', 'current-highlight')
-    .attr('width', 100)
-    .attr('height', 50)
-    .attr('x', -50)
-    .attr('y', -25)
-    .attr('rx', 8)
-    .attr('ry', 8)
-    .attr('fill', 'none')
-    .attr('stroke', cssVar('--graph-current-arrow'))
-    .attr('stroke-width', 8)
+    .attr('width', 116)
+    .attr('height', 66)
+    .attr('x', -58)
+    .attr('y', -33)
+    .attr('rx', 12)
+    .attr('ry', 12)
+    .attr('fill', cssVar('--graph-current-arrow'))
+    .attr('stroke', 'none')
     .style('display', 'none');
   let currentHighlightedNodeId: string | null = null;
 
@@ -1015,6 +1019,13 @@ export function createGraphVisualization(
           currentHighlight.attr('transform', `translate(${hn.x || 0},${hn.y || 0})`);
         }
       }
+
+      // Update visited highlight positions
+      visitedHighlightsGroup.selectAll<SVGRectElement, { id: string }>('rect')
+        .attr('transform', d => {
+          const n = graph.nodes.find(n => n.id === d.id);
+          return n ? `translate(${n.x || 0},${n.y || 0})` : '';
+        });
     };
 
     // Store original positions as target positions for the simulation
@@ -1572,35 +1583,75 @@ export function createGraphVisualization(
         .scale(t.k);
       svg.transition().duration(300).call(zoom.transform as any, transform);
     },
-    highlightCurrentNode(nodeId: string | null): void {
+    highlightCurrentNode(nodeId: string | null, visited?: Map<string, number>): void {
+      // Update current highlight
       if (!nodeId) {
         currentHighlightedNodeId = null;
         currentHighlight.style('display', 'none');
-        // Reset minimap node colours
-        minimapNodeSel.attr('fill', d => getNodeFill(d.type));
-        return;
+      } else {
+        const targetNode = graph.nodes.find(n => n.id === nodeId);
+        if (targetNode) {
+          currentHighlightedNodeId = nodeId;
+          currentHighlight
+            .attr('transform', `translate(${targetNode.x || 0},${targetNode.y || 0})`)
+            .attr('fill', cssVar('--graph-current-arrow'))
+            .style('display', null);
+        }
       }
-      const targetNode = graph.nodes.find(n => n.id === nodeId);
-      if (!targetNode) return;
-      currentHighlightedNodeId = nodeId;
-      currentHighlight
-        .attr('transform', `translate(${targetNode.x || 0},${targetNode.y || 0})`)
-        .attr('stroke', cssVar('--graph-current-arrow'))
-        .style('display', null);
-      // Highlight active node on minimap
-      minimapNodeSel.attr('fill', d =>
-        d.id === nodeId
-          ? cssVar('--graph-current-arrow')
-          : getNodeFill(d.type)
-      );
+
+      // Update visited highlights
+      if (visited) {
+        visitedNodeMap = visited;
+      }
+
+      const entries = Array.from(visitedNodeMap.entries())
+        .filter(([id, op]) => id !== currentHighlightedNodeId && op > 0)
+        .map(([id, opacity]) => ({ id, opacity }))
+        .filter(e => graph.nodes.find(n => n.id === e.id));
+
+      visitedHighlightsGroup.selectAll<SVGRectElement, { id: string; opacity: number }>('rect')
+        .data(entries, d => d.id)
+        .join(
+          enter => enter.append('rect')
+            .attr('width', 116)
+            .attr('height', 66)
+            .attr('x', -58)
+            .attr('y', -33)
+            .attr('rx', 12)
+            .attr('ry', 12)
+            .attr('fill', cssVar('--graph-current-arrow'))
+            .attr('stroke', 'none'),
+          update => update,
+          exit => exit.remove()
+        )
+        .attr('transform', d => {
+          const n = graph.nodes.find(n => n.id === d.id);
+          return n ? `translate(${n.x || 0},${n.y || 0})` : '';
+        })
+        .attr('opacity', d => d.opacity);
+
+      // Update minimap: current = bright red, visited = faded red, others = normal
+      minimapNodeSel
+        .attr('fill', d => {
+          if (currentHighlightedNodeId && d.id === currentHighlightedNodeId) return cssVar('--graph-current-arrow');
+          if (visitedNodeMap.has(d.id) && visitedNodeMap.get(d.id)! > 0) return cssVar('--graph-current-arrow');
+          return getNodeFill(d.type);
+        })
+        .attr('opacity', d => {
+          if (currentHighlightedNodeId && d.id === currentHighlightedNodeId) return 1;
+          const vo = visitedNodeMap.get(d.id);
+          if (vo && vo > 0) return vo;
+          return 1;
+        });
     },
     updateColors(): void {
       // Re-read CSS variables and apply to all D3-rendered elements
       // Arrow marker
       svg.select('#arrow path').attr('fill', cssVar('--graph-link-stroke'));
 
-      // Current-node arrow
-      currentHighlight.attr('stroke', cssVar('--graph-current-arrow'));
+      // Current-node and visited highlights
+      currentHighlight.attr('fill', cssVar('--graph-current-arrow'));
+      visitedHighlightsGroup.selectAll('rect').attr('fill', cssVar('--graph-current-arrow'));
 
       // Links
       link.attr('stroke', cssVar('--graph-link-stroke'));
@@ -1632,11 +1683,18 @@ export function createGraphVisualization(
       // Minimap
       minimapSvg.select('rect').attr('fill', cssVar('--graph-minimap-bg')).attr('stroke', cssVar('--graph-minimap-stroke'));
       minimapLinkSel.attr('stroke', cssVar('--graph-minimap-link'));
-      minimapNodeSel.attr('fill', d =>
-        currentHighlightedNodeId && d.id === currentHighlightedNodeId
-          ? cssVar('--graph-current-arrow')
-          : getNodeFill(d.type)
-      );
+      minimapNodeSel
+        .attr('fill', d => {
+          if (currentHighlightedNodeId && d.id === currentHighlightedNodeId) return cssVar('--graph-current-arrow');
+          if (visitedNodeMap.has(d.id) && visitedNodeMap.get(d.id)! > 0) return cssVar('--graph-current-arrow');
+          return getNodeFill(d.type);
+        })
+        .attr('opacity', d => {
+          if (currentHighlightedNodeId && d.id === currentHighlightedNodeId) return 1;
+          const vo = visitedNodeMap.get(d.id);
+          if (vo && vo > 0) return vo;
+          return 1;
+        });
       viewportRect.attr('fill', cssVar('--graph-minimap-viewport-fill')).attr('stroke', cssVar('--graph-minimap-viewport-stroke'));
     }
   };
