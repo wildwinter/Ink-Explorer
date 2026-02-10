@@ -38,6 +38,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('theme-changed', (_event: IpcRendererEvent, theme: 'light' | 'dark') => {
       callback(theme);
     });
+  },
+  // Save/load a simple preference
+  savePref: (key: string, value: string) => {
+    ipcRenderer.send('save-pref', key, value);
+  },
+  loadPref: (key: string): Promise<string | null> => {
+    return ipcRenderer.invoke('load-pref', key);
   }
 });
 

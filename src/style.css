@@ -357,6 +357,28 @@ body {
   cursor: default;
 }
 
+.live-ink-separator {
+  width: 1px;
+  height: 16px;
+  background: var(--border-primary);
+  margin: 0 4px;
+}
+
+.live-ink-follow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  margin-left: 2px;
+}
+
+.live-ink-follow input {
+  margin: 0;
+}
+
 .live-ink-status {
   color: var(--text-muted);
   font-size: 12px;

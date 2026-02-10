@@ -119,6 +119,7 @@ export interface GraphController {
   selectNode(nodeId: string): void;
   updateColors(): void;
   highlightCurrentNode(nodeId: string | null): void;
+  centreOnNode(nodeId: string): void;
 }
 
 /**
@@ -178,11 +179,18 @@ export function createGraphVisualization(
   const linksLayer = g.append('g').attr('class', 'links');
   const nodesLayer = g.append('g').attr('class', 'nodes');
 
-  // Current-node indicator (red circle at bottom-left of node)
-  const currentArrow = g.append('circle')
-    .attr('class', 'current-arrow')
-    .attr('r', 6)
-    .attr('fill', cssVar('--graph-current-arrow'))
+  // Current-node indicator (red rounded-rect border behind everything)
+  const currentHighlight = g.insert('rect', '.links')
+    .attr('class', 'current-highlight')
+    .attr('width', 100)
+    .attr('height', 50)
+    .attr('x', -50)
+    .attr('y', -25)
+    .attr('rx', 8)
+    .attr('ry', 8)
+    .attr('fill', 'none')
+    .attr('stroke', cssVar('--graph-current-arrow'))
+    .attr('stroke-width', 8)
     .style('display', 'none');
   let currentHighlightedNodeId: string | null = null;
 
@@ -975,11 +983,11 @@ export function createGraphVisualization(
       // Update nodes
       node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
 
-      // Update current-node arrow position
+      // Update current-node highlight position
       if (currentHighlightedNodeId) {
         const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
         if (hn) {
-          currentArrow.attr('transform', `translate(${(hn.x || 0) - 50},${(hn.y || 0) + 25})`);
+          currentHighlight.attr('transform', `translate(${hn.x || 0},${hn.y || 0})`);
         }
       }
     };
@@ -1507,19 +1515,40 @@ export function createGraphVisualization(
       return selectedNodeId;
     },
     selectNode,
+    centreOnNode(nodeId: string): void {
+      const targetNode = graph.nodes.find(n => n.id === nodeId);
+      if (!targetNode) return;
+      const svgNode = svg.node();
+      if (!svgNode) return;
+      const cw = svgNode.clientWidth;
+      const ch = svgNode.clientHeight;
+      const t = d3.zoomTransform(svgNode);
+      const transform = d3.zoomIdentity
+        .translate(cw / 2 - (targetNode.x || 0) * t.k, ch / 2 - (targetNode.y || 0) * t.k)
+        .scale(t.k);
+      svg.transition().duration(300).call(zoom.transform as any, transform);
+    },
     highlightCurrentNode(nodeId: string | null): void {
       if (!nodeId) {
         currentHighlightedNodeId = null;
-        currentArrow.style('display', 'none');
+        currentHighlight.style('display', 'none');
+        // Reset minimap node colours
+        minimapNodeSel.attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
         return;
       }
       const targetNode = graph.nodes.find(n => n.id === nodeId);
       if (!targetNode) return;
       currentHighlightedNodeId = nodeId;
-      currentArrow
-        .attr('transform', `translate(${(targetNode.x || 0) - 50},${(targetNode.y || 0) + 25})`)
-        .attr('fill', cssVar('--graph-current-arrow'))
+      currentHighlight
+        .attr('transform', `translate(${targetNode.x || 0},${targetNode.y || 0})`)
+        .attr('stroke', cssVar('--graph-current-arrow'))
         .style('display', null);
+      // Highlight active node on minimap
+      minimapNodeSel.attr('fill', d =>
+        d.id === nodeId
+          ? cssVar('--graph-current-arrow')
+          : d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill')
+      );
     },
     updateColors(): void {
       // Re-read CSS variables and apply to all D3-rendered elements
@@ -1527,7 +1556,7 @@ export function createGraphVisualization(
       svg.select('#arrow path').attr('fill', cssVar('--graph-link-stroke'));
 
       // Current-node arrow
-      currentArrow.attr('fill', cssVar('--graph-current-arrow'));
+      currentHighlight.attr('stroke', cssVar('--graph-current-arrow'));
 
       // Links
       link.attr('stroke', cssVar('--graph-link-stroke'));
@@ -1558,7 +1587,11 @@ export function createGraphVisualization(
       // Minimap
       minimapSvg.select('rect').attr('fill', cssVar('--graph-minimap-bg')).attr('stroke', cssVar('--graph-minimap-stroke'));
       minimapLinkSel.attr('stroke', cssVar('--graph-minimap-link'));
-      minimapNodeSel.attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
+      minimapNodeSel.attr('fill', d =>
+        currentHighlightedNodeId && d.id === currentHighlightedNodeId
+          ? cssVar('--graph-current-arrow')
+          : d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill')
+      );
       viewportRect.attr('fill', cssVar('--graph-minimap-viewport-fill')).attr('stroke', cssVar('--graph-minimap-viewport-stroke'));
     }
   };

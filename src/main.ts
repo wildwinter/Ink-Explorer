@@ -192,6 +192,14 @@ ipcMain.on('save-file-state', (_event, filePath: string, state: FileState) => {
   saveFileState(filePath, state);
 });
 
+// IPC handlers for simple preferences
+ipcMain.on('save-pref', (_event, key: string, value: string) => {
+  writePref(key, value);
+});
+ipcMain.handle('load-pref', (_event, key: string) => {
+  return readPref(key);
+});
+
 // Check if we're in development mode
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';

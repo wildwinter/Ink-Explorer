@@ -14,6 +14,8 @@ declare global {
       onToggleCodePane: (callback: () => void) => void;
       saveFileState: (filePath: string, state: unknown) => void;
       onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => void;
+      savePref: (key: string, value: string) => void;
+      loadPref: (key: string) => Promise<string | null>;
     };
   }
 }
@@ -31,6 +33,7 @@ let liveInkStory: InstanceType<typeof Story> | null = null;
 let liveInkStateStack: Array<{ state: string; turnElement: HTMLElement }> = [];
 let liveInkCurrentTurn: HTMLElement | null = null;
 let liveInkIsDinkMode = false;
+let liveInkFollowEnabled = false;
 
 function applyTheme(theme: 'light' | 'dark'): void {
   document.documentElement.setAttribute('data-theme', theme);
@@ -313,6 +316,18 @@ const LIVE_INK_HTML = `
         <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>
       </svg>
     </div>
+    <div class="live-ink-separator"></div>
+    <div class="live-ink-btn" id="live-ink-centre" title="Centre graph on current node">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+      </svg>
+    </div>
+    <label class="live-ink-follow" title="Automatically centre graph when the active node changes">
+      <input type="checkbox" id="live-ink-follow"/>
+      <span>Follow</span>
+    </label>
     <span class="live-ink-status" id="live-ink-status"></span>
   </div>
   <div class="live-ink-output" id="live-ink-output">
@@ -348,9 +363,15 @@ function pathToNodeId(pathStr: string): string | null {
 // Tracks the last known graph-node ID seen during Live Ink execution.
 let liveInkCurrentNodeId: string | null = null;
 
+function centreOnCurrentNode(): void {
+  if (!currentGraphController || !liveInkCurrentNodeId) return;
+  currentGraphController.centreOnNode(liveInkCurrentNodeId);
+}
+
 function updateCurrentNodeHighlight(): void {
   if (!currentGraphController) return;
   currentGraphController.highlightCurrentNode(liveInkCurrentNodeId);
+  if (liveInkFollowEnabled) centreOnCurrentNode();
 }
 
 /**
@@ -396,6 +417,28 @@ function initLiveInk(): void {
     backBtn.onclick = (e) => {
       e.preventDefault();
       liveInkGoBack();
+    };
+  }
+
+  const centreBtn = document.getElementById('live-ink-centre');
+  if (centreBtn) {
+    centreBtn.onclick = (e) => {
+      e.preventDefault();
+      centreOnCurrentNode();
+    };
+  }
+
+  const followCheckbox = document.getElementById('live-ink-follow') as HTMLInputElement | null;
+  if (followCheckbox) {
+    // Load saved preference
+    window.api.loadPref('liveInkFollow').then(val => {
+      liveInkFollowEnabled = val === 'true';
+      followCheckbox.checked = liveInkFollowEnabled;
+    });
+    followCheckbox.onchange = () => {
+      liveInkFollowEnabled = followCheckbox.checked;
+      window.api.savePref('liveInkFollow', String(liveInkFollowEnabled));
+      if (liveInkFollowEnabled) centreOnCurrentNode();
     };
   }
 }
