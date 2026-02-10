@@ -1,5 +1,7 @@
 TODO:
 -----
+Root ink is out of order.
+
 Test more complex Ink if you can find some.
 
 Add variable tracking.

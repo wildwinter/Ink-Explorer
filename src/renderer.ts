@@ -42,7 +42,14 @@ window.addEventListener('DOMContentLoaded', () => {
   if (window.api) {
     setupCompileResultListener();
     window.api.onToggleCodePane(() => uiManager.toggleCodePane());
-    window.api.onThemeChanged((theme) => uiManager.applyTheme(theme));
+    window.api.onThemeChanged((theme) => {
+      uiManager.applyTheme(theme);
+      // Force graph to re-read CSS variables
+      if (currentGraphController) {
+        // slight delay to ensure style recalc? usually not needed but safe
+        requestAnimationFrame(() => currentGraphController?.updateColors());
+      }
+    });
 
     // Initialize Live Ink with API access
     liveInkController.init();

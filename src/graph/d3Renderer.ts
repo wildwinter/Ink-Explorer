@@ -978,15 +978,22 @@ export function createGraphVisualization(
             }
 
             visitedHighlightsGroup.selectAll('rect')
-                .attr('stroke', cssVar('--graph-visited-stroke'));
+                .attr('fill', cssVar('--graph-current-arrow'))
+                .attr('stroke', 'none');
 
             // Legend
             legend.select('rect').attr('fill', cssVar('--graph-legend-bg'));
             legend.selectAll('text').attr('fill', cssVar('--graph-legend-text'));
-            // Update legend item fills
-            legend.selectAll('rect').filter((_, i) => i === 1).attr('fill', cssVar('--graph-knot-fill'));
-            legend.selectAll('rect').filter((_, i) => i === 2).attr('fill', cssVar('--graph-stitch-fill'));
-            legend.selectAll('rect').filter((_, i) => i === 3).attr('fill', cssVar('--graph-root-fill'));
+
+            // Re-select legend items to update them properly
+            // The previous index-based selection was fragile. Let's trust the order we created them.
+            // Items are: Bg, Knot, Stitch, Root
+            const legendRects = legend.selectAll('rect').nodes() as SVGRectElement[];
+            if (legendRects.length >= 4) {
+                d3.select(legendRects[1]).attr('fill', cssVar('--graph-knot-fill')).attr('stroke', cssVar('--graph-node-stroke'));
+                d3.select(legendRects[2]).attr('fill', cssVar('--graph-stitch-fill')).attr('stroke', cssVar('--graph-node-stroke'));
+                d3.select(legendRects[3]).attr('fill', cssVar('--graph-root-fill')).attr('stroke', cssVar('--graph-node-stroke'));
+            }
 
             // Minimap
             // Background
