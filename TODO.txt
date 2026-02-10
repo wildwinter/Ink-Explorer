@@ -1,6 +1,7 @@
 TODO:
 -----
-Root ink is out of order.
+BUG: Highlight doesn't work stepping backwards.
+BUG: Root ink is out of order.
 
 Test more complex Ink if you can find some.
 
@@ -10,6 +11,9 @@ Add loading/saving test sets of variables.
 Rename
 
 Add stress testing.
+
+Proper icons.
+Proper documentation.
 
 DONE:
 -----

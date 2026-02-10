@@ -1,5 +1,5 @@
 {
-  "name": "dink-explorer",
+  "name": "ink-explorer",
   "version": "0.0.1",
   "description": "Allows users to explore Dink and Ink files.",
   "main": "dist-electron/main.js",
@@ -30,25 +30,25 @@
     "vite-plugin-electron": "^0.29.0"
   },
   "build": {
-    "appId": "net.wildwinter.dinkexplorer",
-    "productName": "DinkExplorer",
+    "appId": "net.wildwinter.inkexplorer",
+    "productName": "InkExplorer",
     "directories": {
       "output": "release"
     },
     "extraResources": [
       {
-        "from": "build/DinkExplorer.ico",
-        "to": "DinkExplorer.ico"
+        "from": "build/InkExplorer.ico",
+        "to": "InkExplorer.ico"
       }
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "build/DinkExplorer.icns",
+      "icon": "build/InkExplorer.icns",
       "identity": null
     },
     "win": {
       "target": "nsis",
-      "icon": "build/DinkExplorer.ico"
+      "icon": "build/InkExplorer.ico"
     },
     "files": [
       "dist/**/*",

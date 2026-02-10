@@ -16,11 +16,11 @@ const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
 const recentFilesManager = new RecentFilesManager(recentFilesPath);
 
 // Platform-native config storage
-// macOS: NSUserDefaults (~/Library/Preferences/net.wildwinter.dinkexplorer.plist)
-// Windows: Registry (HKCU\Software\DinkExplorer)
+// macos: NSUserDefaults (~/Library/Preferences/net.wildwinter.inkexplorer.plist)
+// Windows: Registry (HKCU\Software\InkExplorer)
 // Uses execFileSync to avoid shell escaping issues
-const BUNDLE_ID = 'net.wildwinter.dinkexplorer';
-const REG_KEY = 'HKCU\\Software\\DinkExplorer';
+const BUNDLE_ID = 'net.wildwinter.inkexplorer';
+const REG_KEY = 'HKCU\\Software\\InkExplorer';
 let boundsTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Theme management
@@ -57,7 +57,7 @@ function loadWindowBounds(): Electron.Rectangle | null {
   try {
     const bounds = JSON.parse(raw);
     if (typeof bounds.x === 'number' && typeof bounds.y === 'number' &&
-        typeof bounds.width === 'number' && typeof bounds.height === 'number') {
+      typeof bounds.width === 'number' && typeof bounds.height === 'number') {
       return bounds;
     }
   } catch { /* invalid data */ }
@@ -255,26 +255,26 @@ function createMenu(): void {
   const recentFiles = recentFilesManager.getAll();
   const recentFilesSubmenu: MenuItemConstructorOptions[] = recentFiles.length > 0
     ? [
-        ...recentFiles.map((filePath, index) => ({
-          label: `${path.basename(filePath)} — ${path.dirname(filePath)}`,
-          accelerator: index < 9 ? `${isMac ? 'Cmd' : 'Ctrl'}+${index + 1}` : undefined,
-          click: () => compileAndLogInk(filePath)
-        })),
-        { type: 'separator' as const },
-        {
-          label: 'Clear Recent Files',
-          click: () => {
-            recentFilesManager.clear();
-            createMenu();
-          }
+      ...recentFiles.map((filePath, index) => ({
+        label: `${path.basename(filePath)} — ${path.dirname(filePath)}`,
+        accelerator: index < 9 ? `${isMac ? 'Cmd' : 'Ctrl'}+${index + 1}` : undefined,
+        click: () => compileAndLogInk(filePath)
+      })),
+      { type: 'separator' as const },
+      {
+        label: 'Clear Recent Files',
+        click: () => {
+          recentFilesManager.clear();
+          createMenu();
         }
-      ]
+      }
+    ]
     : [
-        {
-          label: 'No Recent Files',
-          enabled: false
-        }
-      ];
+      {
+        label: 'No Recent Files',
+        enabled: false
+      }
+    ];
 
   const template: MenuItemConstructorOptions[] = [
     // App menu (macOS only)

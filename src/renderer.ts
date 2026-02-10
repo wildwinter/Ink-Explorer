@@ -32,7 +32,7 @@ const uiManager = new UIManager();
 const liveInkController = new LiveInkController();
 
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
+  console.log('Ink Explorer loaded - use File > Load Ink... to examine an Ink file');
   showEmptyState();
 
   // Suppress Electron's native context menu (we use our own on graph nodes)
