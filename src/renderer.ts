@@ -237,6 +237,7 @@ function setupCompileResultListener(): void {
       if (output) {
         liveInkController.setOutputContainer(output);
       }
+      liveInkController.init();
 
     } else {
       console.error('❌ Ink compilation failed!');
@@ -272,6 +273,7 @@ function setupCompileResultListener(): void {
       if (output) {
         liveInkController.setOutputContainer(output);
       }
+      liveInkController.init();
     }
 
     console.log('\n===============================\n');

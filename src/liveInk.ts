@@ -122,8 +122,11 @@ export class LiveInkController {
             if (window.api && window.api.loadPref) {
                 window.api.loadPref('liveInkFollow').then(val => {
                     this.liveInkFollowEnabled = val === null ? true : val === 'true';
-                    followCheckbox.checked = this.liveInkFollowEnabled;
+                    if (followCheckbox) followCheckbox.checked = this.liveInkFollowEnabled;
                 });
+            } else {
+                // Determine from current state if no API
+                followCheckbox.checked = this.liveInkFollowEnabled;
             }
 
             followCheckbox.onchange = () => {
@@ -178,6 +181,9 @@ export class LiveInkController {
         this.liveInkCurrentNodeId = null;
         this.liveInkPreviousNodeId = null;
         this.liveInkVisitedNodes.clear();
+
+        // Re-bind listeners/state in case of re-render
+        this.init();
 
         this.updateButtons();
         if (this.graphController) this.graphController.highlightCurrentNode(null);
