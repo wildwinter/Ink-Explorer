@@ -150,3 +150,6 @@ release/
 
 # Electron-specific
 .electron-builder.yml
+
+.DS_Store
+Thumbs.db

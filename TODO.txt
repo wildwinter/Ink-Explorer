@@ -1,7 +1,5 @@
 TODO:
 -----
-Test different include paths.
-Test tunnels
 Test more complex Ink if you can find some.
 
 Add simulation callout.
@@ -26,3 +24,5 @@ Remove icons.
 Add Ink runner.
 Parse and markup Dink
 Themes
+Test different include paths.
+Test tunnels
