@@ -943,6 +943,20 @@ export function createGraphVisualization(
                     return n ? `translate(${n.x || 0},${n.y || 0})` : '';
                 });
 
+            // Update minimap nodes
+            minimapNodeSel.attr('fill', d => {
+                if (d.id === currentHighlightedNodeId) return cssVar('--graph-current-arrow');
+                const opacity = visitedNodeMap.get(d.id);
+                if (opacity !== undefined) {
+                    const baseColor = getNodeFill(d.type);
+                    const highlightColor = cssVar('--graph-current-arrow');
+                    // Interpolate between base color (0) and highlight color (1)
+                    // We map opacity 0.0-0.75 to an interpolation value
+                    // Let's treat 0.75 as "full strength" for visibility
+                    return d3.interpolateRgb(baseColor, highlightColor)(Math.min(1, opacity / 0.75));
+                }
+                return getNodeFill(d.type);
+            });
         },
         updateColors() {
             // Re-apply colors from CSS variables
@@ -979,7 +993,16 @@ export function createGraphVisualization(
             minimapSvg.select('rect').attr('fill', cssVar('--graph-minimap-bg'))
                 .attr('stroke', cssVar('--graph-minimap-stroke'));
             minimapLinkSel.attr('stroke', cssVar('--graph-minimap-link'));
-            minimapNodeSel.attr('fill', d => getNodeFill(d.type));
+            minimapNodeSel.attr('fill', d => {
+                if (d.id === currentHighlightedNodeId) return cssVar('--graph-current-arrow');
+                const opacity = visitedNodeMap.get(d.id);
+                if (opacity !== undefined) {
+                    const baseColor = getNodeFill(d.type);
+                    const highlightColor = cssVar('--graph-current-arrow');
+                    return d3.interpolateRgb(baseColor, highlightColor)(Math.min(1, opacity / 0.75));
+                }
+                return getNodeFill(d.type);
+            });
             viewportRect.attr('fill', cssVar('--graph-minimap-viewport-fill'))
                 .attr('stroke', cssVar('--graph-minimap-viewport-stroke'));
         }
