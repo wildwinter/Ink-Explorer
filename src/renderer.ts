@@ -333,6 +333,27 @@ function nodeIdToPath(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: st
 }
 
 /**
+ * Parses an inkjs internal path string into a graph node ID.
+ * Ink paths look like "KnotName.0.3" or "KnotName.StitchName.0.c-0.4";
+ * we keep only valid Ink identifier components (letters/digits/underscores
+ * starting with a letter or underscore) and drop numeric indices and
+ * internal markers like "c-0", "g-0", "s0", etc.
+ */
+function pathToNodeId(pathStr: string): string | null {
+  const parts = pathStr.split('.').filter(p => /^[A-Za-z_]/.test(p) && /^[A-Za-z0-9_]+$/.test(p));
+  if (parts.length === 0) return null;
+  return parts.join('.');
+}
+
+// Tracks the last known graph-node ID seen during Live Ink execution.
+let liveInkCurrentNodeId: string | null = null;
+
+function updateCurrentNodeHighlight(): void {
+  if (!currentGraphController) return;
+  currentGraphController.highlightCurrentNode(liveInkCurrentNodeId);
+}
+
+/**
  * Starts a Live Ink test from the given node, switching to the Live Ink tab.
  */
 function startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch', knotName?: string): void {
@@ -399,8 +420,10 @@ function startLiveInk(storyJson: string, startPath?: string | null): void {
   liveInkStateStack = [];
   liveInkCurrentTurn = null;
   liveInkIsDinkMode = false;
+  liveInkCurrentNodeId = null;
 
   updateLiveInkButtons();
+  if (currentGraphController) currentGraphController.highlightCurrentNode(null);
 
   if (status) {
     status.textContent = startPath ? `Testing: ${startPath}` : 'Testing from start';
@@ -452,8 +475,24 @@ function continueLiveInk(): void {
   liveInkCurrentTurn.className = 'turn';
   output.appendChild(liveInkCurrentTurn);
 
+  // Capture current position before the loop — handles knots that start
+  // directly with choices (no text content), where canContinue is already false.
+  const initialPath = liveInkStory.state.currentPathString;
+  if (initialPath) {
+    const parsed = pathToNodeId(initialPath);
+    if (parsed) liveInkCurrentNodeId = parsed;
+  }
+
   while (liveInkStory.canContinue) {
     const text = liveInkStory.Continue();
+
+    // Track current knot/stitch for graph highlight
+    const pathStr = liveInkStory.state.currentPathString;
+    if (pathStr) {
+      const parsed = pathToNodeId(pathStr);
+      if (parsed) liveInkCurrentNodeId = parsed;
+    }
+
     if (!text) continue;
 
     // Detect dink mode dynamically from knot/line tags
@@ -490,10 +529,27 @@ function continueLiveInk(): void {
     liveInkCurrentTurn.appendChild(p);
   }
 
+  // After the loop, currentPathString may be null at choice points. Use the
+  // first choice's sourcePath as a reliable indicator of the current location.
+  if (liveInkStory.currentChoices.length > 0) {
+    const choicePath = (liveInkStory.currentChoices[0] as any).sourcePath;
+    if (choicePath) {
+      const parsed = pathToNodeId(choicePath);
+      if (parsed) liveInkCurrentNodeId = parsed;
+    }
+  } else {
+    const finalPath = liveInkStory.state.currentPathString;
+    if (finalPath) {
+      const parsed = pathToNodeId(finalPath);
+      if (parsed) liveInkCurrentNodeId = parsed;
+    }
+  }
+
   // Save state for back navigation
   const state = liveInkStory.state.toJson();
   liveInkStateStack.push({ state, turnElement: liveInkCurrentTurn });
   updateLiveInkButtons();
+  updateCurrentNodeHighlight();
 
   if (liveInkStory.currentChoices.length > 0) {
     renderLiveInkChoices();
@@ -564,6 +620,7 @@ function liveInkGoBack(): void {
   liveInkCurrentTurn = prevState.turnElement;
   renderLiveInkChoices();
   updateLiveInkButtons();
+  updateCurrentNodeHighlight();
 }
 
 // Set up listener for Ink compilation results from main process

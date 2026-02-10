@@ -3,6 +3,9 @@ TODO:
 Test more complex Ink if you can find some.
 
 Add simulation callout.
+
+Add a root node.
+
 Add variable tracking.
 Add loading/saving test sets of variables.
 

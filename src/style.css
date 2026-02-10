@@ -31,6 +31,7 @@
   --graph-node-text: #ecf0f1;
   --graph-selected-stroke: #f1c40f;
   --graph-link-stroke: #95a5a6;
+  --graph-current-arrow: #e74c3c;
   --graph-legend-bg: rgba(30, 30, 30, 0.8);
   --graph-legend-text: #ecf0f1;
   --graph-minimap-bg: rgba(30, 30, 30, 0.85);
@@ -72,6 +73,7 @@
   --graph-node-text: #ffffff;
   --graph-selected-stroke: #e67e22;
   --graph-link-stroke: #7f8c8d;
+  --graph-current-arrow: #c0392b;
   --graph-legend-bg: rgba(255, 255, 255, 0.9);
   --graph-legend-text: #2c3e50;
   --graph-minimap-bg: rgba(255, 255, 255, 0.9);

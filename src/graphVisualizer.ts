@@ -118,6 +118,7 @@ export interface GraphController {
   getSelectedNodeId(): string | null;
   selectNode(nodeId: string): void;
   updateColors(): void;
+  highlightCurrentNode(nodeId: string | null): void;
 }
 
 /**
@@ -176,6 +177,14 @@ export function createGraphVisualization(
   // Create layers
   const linksLayer = g.append('g').attr('class', 'links');
   const nodesLayer = g.append('g').attr('class', 'nodes');
+
+  // Current-node indicator (red circle at bottom-left of node)
+  const currentArrow = g.append('circle')
+    .attr('class', 'current-arrow')
+    .attr('r', 6)
+    .attr('fill', cssVar('--graph-current-arrow'))
+    .style('display', 'none');
+  let currentHighlightedNodeId: string | null = null;
 
   // Variables to hold D3 selections and simulation
   let simulation: d3.Simulation<d3.SimulationNodeDatum, undefined>;
@@ -965,6 +974,14 @@ export function createGraphVisualization(
 
       // Update nodes
       node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+
+      // Update current-node arrow position
+      if (currentHighlightedNodeId) {
+        const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
+        if (hn) {
+          currentArrow.attr('transform', `translate(${(hn.x || 0) - 50},${(hn.y || 0) + 25})`);
+        }
+      }
     };
 
     // Store original positions as target positions for the simulation
@@ -1490,10 +1507,27 @@ export function createGraphVisualization(
       return selectedNodeId;
     },
     selectNode,
+    highlightCurrentNode(nodeId: string | null): void {
+      if (!nodeId) {
+        currentHighlightedNodeId = null;
+        currentArrow.style('display', 'none');
+        return;
+      }
+      const targetNode = graph.nodes.find(n => n.id === nodeId);
+      if (!targetNode) return;
+      currentHighlightedNodeId = nodeId;
+      currentArrow
+        .attr('transform', `translate(${(targetNode.x || 0) - 50},${(targetNode.y || 0) + 25})`)
+        .attr('fill', cssVar('--graph-current-arrow'))
+        .style('display', null);
+    },
     updateColors(): void {
       // Re-read CSS variables and apply to all D3-rendered elements
       // Arrow marker
       svg.select('#arrow path').attr('fill', cssVar('--graph-link-stroke'));
+
+      // Current-node arrow
+      currentArrow.attr('fill', cssVar('--graph-current-arrow'));
 
       // Links
       link.attr('stroke', cssVar('--graph-link-stroke'));

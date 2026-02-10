@@ -1,4 +1,6 @@
-﻿=== Scene1
+Where does this happen?
+
+=== Scene1
 #dink
 Here we are in scene1.ink - this is testing a set of different blocks. #id:scene1_Scene1_R819
 -> Part1

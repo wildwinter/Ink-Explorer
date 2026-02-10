@@ -248,7 +248,7 @@ function createMenu(): void {
   const recentFilesSubmenu: MenuItemConstructorOptions[] = recentFiles.length > 0
     ? [
         ...recentFiles.map((filePath, index) => ({
-          label: path.basename(filePath),
+          label: `${path.basename(filePath)} — ${path.dirname(filePath)}`,
           accelerator: index < 9 ? `${isMac ? 'Cmd' : 'Ctrl'}+${index + 1}` : undefined,
           click: () => compileAndLogInk(filePath)
         })),
