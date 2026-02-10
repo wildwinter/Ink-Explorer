@@ -32,6 +32,12 @@ contextBridge.exposeInMainWorld('api', {
   // Save per-file state to main process
   saveFileState: (filePath: string, state: unknown) => {
     ipcRenderer.send('save-file-state', filePath, state);
+  },
+  // Listen for theme changes from main process
+  onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => {
+    ipcRenderer.on('theme-changed', (_event: IpcRendererEvent, theme: 'light' | 'dark') => {
+      callback(theme);
+    });
   }
 });
 

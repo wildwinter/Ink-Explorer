@@ -13,6 +13,7 @@ declare global {
       onCompileResult: (callback: (result: CompilationResult) => void) => void;
       onToggleCodePane: (callback: () => void) => void;
       saveFileState: (filePath: string, state: unknown) => void;
+      onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => void;
     };
   }
 }
@@ -31,6 +32,13 @@ let liveInkStateStack: Array<{ state: string; turnElement: HTMLElement }> = [];
 let liveInkCurrentTurn: HTMLElement | null = null;
 let liveInkIsDinkMode = false;
 
+function applyTheme(theme: 'light' | 'dark'): void {
+  document.documentElement.setAttribute('data-theme', theme);
+  if (currentGraphController) {
+    currentGraphController.updateColors();
+  }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Dink Explorer loaded - use File > Load Ink... to compile an Ink file');
   showEmptyState();
@@ -48,6 +56,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (window.api) {
     setupCompileResultListener();
     window.api.onToggleCodePane(toggleCodePane);
+    window.api.onThemeChanged(applyTheme);
   } else {
     console.error('API not available - preload script may not have loaded correctly');
   }

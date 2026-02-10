@@ -6,6 +6,10 @@
 import * as d3 from 'd3';
 import type { StoryStructure, KnotInfo, StitchInfo } from './ink/analyzer.js';
 
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 interface GraphNode {
   id: string;
   label: string;
@@ -113,6 +117,7 @@ export interface GraphController {
   setTransform(x: number, y: number, k: number): void;
   getSelectedNodeId(): string | null;
   selectNode(nodeId: string): void;
+  updateColors(): void;
 }
 
 /**
@@ -166,7 +171,7 @@ export function createGraphVisualization(
     .attr('orient', 'auto')
     .append('path')
     .attr('d', 'M0,-5L10,0L0,5')
-    .attr('fill', '#95a5a6');
+    .attr('fill', cssVar('--graph-link-stroke'));
 
   // Create layers
   const linksLayer = g.append('g').attr('class', 'links');
@@ -993,7 +998,7 @@ export function createGraphVisualization(
         return `${sourceId}-${targetId}`;
       })
       .join('line')
-      .attr('stroke', '#95a5a6')
+      .attr('stroke', cssVar('--graph-link-stroke'))
       .attr('stroke-width', 2)
       .attr('stroke-opacity', 0.6)
       .attr('marker-end', 'url(#arrow)');
@@ -1020,8 +1025,8 @@ export function createGraphVisualization(
             .attr('y', -25)
             .attr('rx', 8)
             .attr('ry', 8)
-            .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71')
-            .attr('stroke', '#ecf0f1')
+            .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+            .attr('stroke', cssVar('--graph-node-stroke'))
             .attr('stroke-width', 2)
             .style('cursor', 'pointer');
 
@@ -1032,7 +1037,7 @@ export function createGraphVisualization(
             .attr('x', 0)
             .attr('y', 5)
             .attr('text-anchor', 'middle')
-            .attr('fill', '#ecf0f1')
+            .attr('fill', cssVar('--graph-node-text'))
             .attr('font-size', '12px')
             .attr('font-weight', d => d.type === 'knot' ? 'bold' : 'normal')
             .style('pointer-events', 'none')
@@ -1050,10 +1055,10 @@ export function createGraphVisualization(
 
               // Highlight selected node
               nodesLayer.selectAll('.node-rect')
-                .attr('stroke', '#ecf0f1')
+                .attr('stroke', cssVar('--graph-node-stroke'))
                 .attr('stroke-width', 2);
               d3.select(event.currentTarget as Element).select('.node-rect')
-                .attr('stroke', '#f1c40f')
+                .attr('stroke', cssVar('--graph-selected-stroke'))
                 .attr('stroke-width', 3);
 
               selectedNodeId = d.id;
@@ -1253,7 +1258,7 @@ export function createGraphVisualization(
     .attr('y', -10)
     .attr('width', 150)
     .attr('height', 50)
-    .attr('fill', 'rgba(30, 30, 30, 0.8)')
+    .attr('fill', cssVar('--graph-legend-bg'))
     .attr('rx', 5);
 
   // Knot legend
@@ -1264,14 +1269,14 @@ export function createGraphVisualization(
     .attr('height', 16)
     .attr('rx', 4)
     .attr('ry', 4)
-    .attr('fill', '#3498db')
-    .attr('stroke', '#ecf0f1')
+    .attr('fill', cssVar('--graph-knot-fill'))
+    .attr('stroke', cssVar('--graph-node-stroke'))
     .attr('stroke-width', 1);
 
   legend.append('text')
     .attr('x', 35)
     .attr('y', 5)
-    .attr('fill', '#ecf0f1')
+    .attr('fill', cssVar('--graph-legend-text'))
     .attr('font-size', '11px')
     .text('Knot');
 
@@ -1283,14 +1288,14 @@ export function createGraphVisualization(
     .attr('height', 16)
     .attr('rx', 4)
     .attr('ry', 4)
-    .attr('fill', '#2ecc71')
-    .attr('stroke', '#ecf0f1')
+    .attr('fill', cssVar('--graph-stitch-fill'))
+    .attr('stroke', cssVar('--graph-node-stroke'))
     .attr('stroke-width', 1);
 
   legend.append('text')
     .attr('x', 35)
     .attr('y', 30)
-    .attr('fill', '#ecf0f1')
+    .attr('fill', cssVar('--graph-legend-text'))
     .attr('font-size', '11px')
     .text('Stitch');
 
@@ -1315,8 +1320,8 @@ export function createGraphVisualization(
   minimapSvg.append('rect')
     .attr('width', MINIMAP_WIDTH)
     .attr('height', MINIMAP_HEIGHT)
-    .attr('fill', 'rgba(30, 30, 30, 0.85)')
-    .attr('stroke', '#555')
+    .attr('fill', cssVar('--graph-minimap-bg'))
+    .attr('stroke', cssVar('--graph-minimap-stroke'))
     .attr('stroke-width', 1)
     .attr('rx', 4);
 
@@ -1326,7 +1331,7 @@ export function createGraphVisualization(
   const minimapLinkSel = minimapG.selectAll<SVGLineElement, GraphLink>('line')
     .data(graph.links)
     .join('line')
-    .attr('stroke', '#555')
+    .attr('stroke', cssVar('--graph-minimap-link'))
     .attr('stroke-width', 0.5);
 
   // Simplified nodes
@@ -1337,12 +1342,12 @@ export function createGraphVisualization(
     .attr('width', 8)
     .attr('height', 4)
     .attr('rx', 1)
-    .attr('fill', d => d.type === 'knot' ? '#3498db' : '#2ecc71');
+    .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
 
   // Viewport rectangle (shows current visible area)
   const viewportRect = minimapSvg.append('rect')
-    .attr('fill', 'rgba(255, 255, 255, 0.12)')
-    .attr('stroke', 'rgba(255, 255, 255, 0.6)')
+    .attr('fill', cssVar('--graph-minimap-viewport-fill'))
+    .attr('stroke', cssVar('--graph-minimap-viewport-stroke'))
     .attr('stroke-width', 1)
     .style('pointer-events', 'none');
 
@@ -1453,12 +1458,12 @@ export function createGraphVisualization(
 
     // Highlight the node visually
     nodesLayer.selectAll('.node-rect')
-      .attr('stroke', '#ecf0f1')
+      .attr('stroke', cssVar('--graph-node-stroke'))
       .attr('stroke-width', 2);
     nodesLayer.selectAll<SVGGElement, GraphNode>('.node')
       .filter(d => d.id === nodeId)
       .select('.node-rect')
-      .attr('stroke', '#f1c40f')
+      .attr('stroke', cssVar('--graph-selected-stroke'))
       .attr('stroke-width', 3);
 
     selectedNodeId = nodeId;
@@ -1484,6 +1489,43 @@ export function createGraphVisualization(
     getSelectedNodeId(): string | null {
       return selectedNodeId;
     },
-    selectNode
+    selectNode,
+    updateColors(): void {
+      // Re-read CSS variables and apply to all D3-rendered elements
+      // Arrow marker
+      svg.select('#arrow path').attr('fill', cssVar('--graph-link-stroke'));
+
+      // Links
+      link.attr('stroke', cssVar('--graph-link-stroke'));
+
+      // Node rects
+      nodesLayer.selectAll<SVGRectElement, GraphNode>('.node-rect')
+        .attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+        .attr('stroke', function () {
+          return d3.select(this).attr('stroke-width') === '3'
+            ? cssVar('--graph-selected-stroke')
+            : cssVar('--graph-node-stroke');
+        });
+
+      // Node labels
+      nodesLayer.selectAll('.node-label').attr('fill', cssVar('--graph-node-text'));
+
+      // Legend
+      legend.select('rect').attr('fill', cssVar('--graph-legend-bg'));
+      legend.selectAll<SVGRectElement, unknown>('rect')
+        .filter(function () { return this !== legend.select('rect').node(); })
+        .each(function (_, i) {
+          d3.select(this)
+            .attr('fill', i === 0 ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'))
+            .attr('stroke', cssVar('--graph-node-stroke'));
+        });
+      legend.selectAll('text').attr('fill', cssVar('--graph-legend-text'));
+
+      // Minimap
+      minimapSvg.select('rect').attr('fill', cssVar('--graph-minimap-bg')).attr('stroke', cssVar('--graph-minimap-stroke'));
+      minimapLinkSel.attr('stroke', cssVar('--graph-minimap-link'));
+      minimapNodeSel.attr('fill', d => d.type === 'knot' ? cssVar('--graph-knot-fill') : cssVar('--graph-stitch-fill'));
+      viewportRect.attr('fill', cssVar('--graph-minimap-viewport-fill')).attr('stroke', cssVar('--graph-minimap-viewport-stroke'));
+    }
   };
 }

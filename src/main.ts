@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, dialog, MenuItemConstructorOptions, nativeTheme } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -22,6 +22,10 @@ const recentFilesManager = new RecentFilesManager(recentFilesPath);
 const BUNDLE_ID = 'net.wildwinter.dinkexplorer';
 const REG_KEY = 'HKCU\\Software\\DinkExplorer';
 let boundsTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Theme management
+type ThemeSetting = 'light' | 'dark' | 'system';
+let currentThemeSetting: ThemeSetting = 'system';
 
 function readPref(key: string): string | null {
   try {
@@ -93,6 +97,34 @@ function saveFileState(filePath: string, state: FileState): void {
   const all = loadAllFileStates();
   all[filePath] = state;
   writePref('fileStates', JSON.stringify(all));
+}
+
+function getEffectiveTheme(): 'light' | 'dark' {
+  if (currentThemeSetting === 'system') {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  }
+  return currentThemeSetting;
+}
+
+function loadThemeSetting(): ThemeSetting {
+  const saved = readPref('theme');
+  if (saved === 'light' || saved === 'dark' || saved === 'system') {
+    return saved;
+  }
+  return 'system';
+}
+
+function applyTheme(): void {
+  if (!mainWindow) return;
+  nativeTheme.themeSource = currentThemeSetting;
+  mainWindow.webContents.send('theme-changed', getEffectiveTheme());
+}
+
+function setTheme(setting: ThemeSetting): void {
+  currentThemeSetting = setting;
+  writePref('theme', setting);
+  applyTheme();
+  createMenu(); // rebuild to update radio check marks
 }
 
 // Function to compile Ink file and send results to renderer
@@ -314,6 +346,29 @@ function createMenu(): void {
             }
           }
         },
+        {
+          label: 'Theme',
+          submenu: [
+            {
+              label: 'System',
+              type: 'radio' as const,
+              checked: currentThemeSetting === 'system',
+              click: () => setTheme('system')
+            },
+            {
+              label: 'Light',
+              type: 'radio' as const,
+              checked: currentThemeSetting === 'light',
+              click: () => setTheme('light')
+            },
+            {
+              label: 'Dark',
+              type: 'radio' as const,
+              checked: currentThemeSetting === 'dark',
+              click: () => setTheme('dark')
+            }
+          ]
+        },
         { type: 'separator' as const },
         { role: 'reload' as const },
         { role: 'forceReload' as const },
@@ -352,11 +407,23 @@ app.whenReady().then(() => {
   // Load recent files from disk
   recentFilesManager.load();
 
+  // Load saved theme preference
+  currentThemeSetting = loadThemeSetting();
+
   createMenu();
   createWindow();
 
+  // React to OS theme changes (relevant when setting is 'system')
+  nativeTheme.on('updated', () => {
+    if (currentThemeSetting === 'system') {
+      applyTheme();
+    }
+  });
+
   // Auto-load most recent file after window is ready
   mainWindow!.webContents.once('did-finish-load', () => {
+    applyTheme(); // send initial theme to renderer
+
     const mostRecentFile = recentFilesManager.getMostRecent();
     if (mostRecentFile && fs.existsSync(mostRecentFile)) {
       compileAndLogInk(mostRecentFile);

@@ -1,5 +1,5 @@
 TODO:
-Themes
+-----
 Test different include paths.
 Test tunnels
 Test more complex Ink if you can find some.
@@ -8,13 +8,12 @@ Add simulation callout.
 Add variable tracking.
 Add loading/saving test sets of variables.
 
-Parse and markup Dink
-
 Rename
 
 Add stress testing.
 
 DONE:
+-----
 Remove the old panes.
 Fix to click and drag.
 BUG: Doesn't show included Ink file content.
@@ -25,3 +24,5 @@ Add minimap.
 Syntax colouring.
 Remove icons.
 Add Ink runner.
+Parse and markup Dink
+Themes
