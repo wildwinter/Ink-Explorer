@@ -33,7 +33,7 @@ let liveInkStory: InstanceType<typeof Story> | null = null;
 let liveInkStateStack: Array<{ state: string; turnElement: HTMLElement }> = [];
 let liveInkCurrentTurn: HTMLElement | null = null;
 let liveInkIsDinkMode = false;
-let liveInkFollowEnabled = false;
+let liveInkFollowEnabled = true;
 
 function applyTheme(theme: 'light' | 'dark'): void {
   document.documentElement.setAttribute('data-theme', theme);
@@ -465,7 +465,7 @@ function initLiveInk(): void {
   if (followCheckbox) {
     // Load saved preference
     window.api.loadPref('liveInkFollow').then(val => {
-      liveInkFollowEnabled = val === 'true';
+      liveInkFollowEnabled = val === null ? true : val === 'true';
       followCheckbox.checked = liveInkFollowEnabled;
     });
     followCheckbox.onchange = () => {

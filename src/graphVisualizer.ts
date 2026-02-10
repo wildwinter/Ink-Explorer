@@ -768,7 +768,7 @@ export function createGraphVisualization(
     // visually overlap with any edges in the connected graph
     let maxConnectedY = -Infinity;
     graph.nodes.forEach(n => {
-      const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+      const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
       if (connectedKnotIds.has(knotId) && n.y !== undefined) {
         maxConnectedY = Math.max(maxConnectedY, n.y);
       }
@@ -777,7 +777,7 @@ export function createGraphVisualization(
     if (maxConnectedY > -Infinity) {
       let minDisconnectedY = Infinity;
       graph.nodes.forEach(n => {
-        const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+        const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
         if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
           minDisconnectedY = Math.min(minDisconnectedY, n.y);
         }
@@ -787,7 +787,7 @@ export function createGraphVisualization(
         const verticalGap = 300;
         const yShift = maxConnectedY - minDisconnectedY + verticalGap;
         graph.nodes.forEach(n => {
-          const knotId = n.type === 'knot' ? n.id : n.knotName || '';
+          const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
           if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
             n.y += yShift;
           }
@@ -1089,7 +1089,7 @@ export function createGraphVisualization(
             .attr('text-anchor', 'middle')
             .attr('fill', cssVar('--graph-node-text'))
             .attr('font-size', '12px')
-            .attr('font-weight', d => d.type === 'knot' ? 'bold' : 'normal')
+            .attr('font-weight', d => (d.type === 'knot' || d.type === 'root') ? 'bold' : 'normal')
             .style('pointer-events', 'none')
             .style('user-select', 'none');
 
