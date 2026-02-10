@@ -8,10 +8,9 @@ Test more complex Ink if you can find some.
 Add variable tracking.
 Add loading/saving test sets of variables.
 
-Rename
-
 Add stress testing.
 
+Fix up About...
 Proper icons.
 Proper documentation.
 
@@ -34,3 +33,4 @@ Test tunnels
 Add simulation callout.
 Add a root node.
 Add fading visit
+Rename
