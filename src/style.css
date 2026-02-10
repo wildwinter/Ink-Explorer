@@ -219,18 +219,58 @@ body {
 }
 
 /* Ink/Dink syntax highlighting (colours match Dinky editor themes) */
-.ink-comment { color: var(--syn-comment); }
-.ink-knot { color: var(--syn-knot); font-weight: bold; }
-.ink-stitch { color: var(--syn-knot); }
-.ink-divert { color: var(--syn-divert); }
-.ink-choice { color: var(--syn-divert); font-weight: bold; }
-.ink-gather { color: var(--syn-divert); }
-.ink-code { color: var(--syn-code); }
-.ink-tag { color: var(--syn-tag); }
-.ink-dink-name { color: var(--syn-dink-name); font-weight: bold; }
-.ink-dink-qual { color: var(--syn-dink-qual); font-style: italic; }
-.ink-dink-dir { color: var(--syn-dink-dir); font-style: italic; }
-.ink-dink-text { color: var(--syn-dink-text); }
+.ink-comment {
+  color: var(--syn-comment);
+}
+
+.ink-knot {
+  color: var(--syn-knot);
+  font-weight: bold;
+}
+
+.ink-stitch {
+  color: var(--syn-knot);
+}
+
+.ink-divert {
+  color: var(--syn-divert);
+}
+
+.ink-choice {
+  color: var(--syn-divert);
+  font-weight: bold;
+}
+
+.ink-gather {
+  color: var(--syn-divert);
+}
+
+.ink-code {
+  color: var(--syn-code);
+}
+
+.ink-tag {
+  color: var(--syn-tag);
+}
+
+.ink-dink-name {
+  color: var(--syn-dink-name);
+  font-weight: bold;
+}
+
+.ink-dink-qual {
+  color: var(--syn-dink-qual);
+  font-style: italic;
+}
+
+.ink-dink-dir {
+  color: var(--syn-dink-dir);
+  font-style: italic;
+}
+
+.ink-dink-text {
+  color: var(--syn-dink-text);
+}
 
 /* Minimap */
 .minimap {
@@ -451,7 +491,21 @@ body {
 }
 
 /* Dink dialogue colours (Live Ink) */
-.dinky-name { color: var(--syn-dink-name); font-weight: bold; }
-.dinky-qualifier { color: var(--syn-dink-qual); font-style: italic; }
-.dinky-direction { color: var(--syn-dink-dir); font-style: italic; }
-.dinky-text { color: var(--syn-dink-text); }
+.dinky-name {
+  color: var(--syn-dink-name);
+  font-weight: bold;
+}
+
+.dinky-qualifier {
+  color: var(--syn-dink-qual);
+  font-style: italic;
+}
+
+.dinky-direction {
+  color: var(--syn-dink-dir);
+  font-style: italic;
+}
+
+.dinky-text {
+  color: var(--syn-dink-text);
+}
