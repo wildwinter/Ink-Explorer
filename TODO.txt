@@ -3,6 +3,8 @@ TODO:
 BUG: Highlight doesn't work stepping backwards.
 BUG: Root ink is out of order.
 
+Follow code view
+
 Remove include lines from root
 
 Test for missing root. (Dinky example project test3)
