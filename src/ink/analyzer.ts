@@ -135,7 +135,23 @@ export function findDiverts(content: unknown, path: string[] = []): DivertInfo[]
  * @param story - The compiled Ink story object
  * @returns Structure containing knots array and diverts information
  */
-export function extractStoryStructure(story: Story): StoryStructure {
+/**
+ * Finds function names declared in the source files.
+ * Ink functions are declared as: === function name(...)
+ */
+function findFunctionNames(sourceFiles: Map<string, string>): Set<string> {
+  const names = new Set<string>();
+  const pattern = /^\s*={2,}\s*function\s+([a-zA-Z_][a-zA-Z0-9_]*)/gm;
+  for (const [, content] of sourceFiles) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      names.add(match[1]);
+    }
+  }
+  return names;
+}
+
+export function extractStoryStructure(story: Story, sourceFiles?: Map<string, string>): StoryStructure {
   const structure: StoryStructure = {
     knots: [],
     rootExits: [],
@@ -156,9 +172,20 @@ export function extractStoryStructure(story: Story): StoryStructure {
       structure.diverts.push(...rootDiverts.filter(d => d.source === 'root'));
     }
 
+    // Build set of function names from source declarations (=== function name)
+    const functionNames = sourceFiles ? findFunctionNames(sourceFiles) : new Set<string>();
+
+    const isFunctionTarget = (target: string) => functionNames.has(target.split('.')[0]);
+
+    // Filter function targets from root exits
+    structure.rootExits = structure.rootExits.filter(t => !isFunctionTarget(t));
+    structure.diverts = structure.diverts.filter(d => !isFunctionTarget(d.target));
+
     if (mainContainer && mainContainer.namedContent) {
-      // Iterate through all named content (knots)
+      // Iterate through all named content (knots), skipping inkjs internal containers
       for (const [knotName, knotContent] of mainContainer.namedContent) {
+        if (knotName === 'global decl') continue;
+        if (functionNames.has(knotName)) continue;
         const knot: KnotInfo = {
           name: knotName,
           stitches: [],
@@ -168,8 +195,9 @@ export function extractStoryStructure(story: Story): StoryStructure {
         // Find diverts from the knot itself (not in stitches)
         const knotDiverts = findDiverts(knotContent, [knotName]);
 
-        // Filter diverts that are directly from this knot (not from a stitch)
+        // Filter diverts that are directly from this knot (not from a stitch), excluding function targets
         const knotExits = knotDiverts.filter(d => {
+          if (isFunctionTarget(d.target)) return false;
           const sourceParts = d.source.split('.');
           return sourceParts.length === 1 ||
                  (knotContent.namedContent && !knotContent.namedContent.has(sourceParts[1]));
@@ -182,7 +210,7 @@ export function extractStoryStructure(story: Story): StoryStructure {
           for (const [stitchName, stitchContent] of knotContent.namedContent) {
             // Find diverts from this stitch
             const stitchDiverts = findDiverts(stitchContent, [knotName, stitchName]);
-            const stitchExits = stitchDiverts.map(d => d.target);
+            const stitchExits = stitchDiverts.filter(d => !isFunctionTarget(d.target)).map(d => d.target);
 
             knot.stitches.push({
               name: stitchName,
@@ -193,9 +221,13 @@ export function extractStoryStructure(story: Story): StoryStructure {
 
         structure.knots.push(knot);
 
-        // Collect all diverts for the overall structure
-        structure.diverts.push(...knotDiverts);
+        // Collect all diverts for the overall structure, excluding function targets
+        structure.diverts.push(...knotDiverts.filter(d => !isFunctionTarget(d.target)));
       }
+    }
+    // Correct isFunctionCall based on source-declared functions (pushesToStack is also true for tunnels)
+    for (const d of structure.diverts) {
+      d.isFunctionCall = isFunctionTarget(d.target);
     }
   } catch (error) {
     console.error('Error extracting story structure:', error);

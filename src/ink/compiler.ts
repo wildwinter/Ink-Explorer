@@ -112,22 +112,10 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
       // Compilation threw an error, but errorHandler should have collected the details
     }
 
-    // Collect all errors and warnings
+    // Errors and warnings are collected by the errorHandler callback.
+    // (compiler.errors/compiler.warnings contain the same items, so skip them to avoid duplicates.)
     const allErrors = [...errorHandling.errors];
     const allWarnings = [...errorHandling.warnings];
-
-    // Also check compiler.errors and compiler.warnings arrays
-    if (compiler.errors && compiler.errors.length > 0) {
-      compiler.errors.forEach(error => {
-        allErrors.push(formatError(error));
-      });
-    }
-
-    if (compiler.warnings && compiler.warnings.length > 0) {
-      compiler.warnings.forEach(warning => {
-        allWarnings.push(formatError(warning));
-      });
-    }
 
     // Check for errors
     if (allErrors.length > 0) {
@@ -149,7 +137,7 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
 
     // Extract story information and structure
     const storyInfo = extractStoryInfo(story);
-    const structure = extractStoryStructure(story);
+    const structure = extractStoryStructure(story, fileHandler.loadedFiles);
 
     // Parse main file to get knot order
     const mainFileKnotOrder = parseKnotOrder(inkContent);

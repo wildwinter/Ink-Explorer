@@ -1,8 +1,6 @@
 TODO:
 -----
-Test globals, functions etc.
-Test more complex Ink if you can find some.
-
+Refresh on refocus?
 Add variable tracking.
 Add loading/saving test sets of variables.
 
@@ -37,3 +35,5 @@ BUG: Root ink is out of order.
 Follow code view
 Remove include lines from root
 Test for missing root. (Dinky example project test3)
+Test globals, functions etc.
+Test more complex Ink if you can find some.
