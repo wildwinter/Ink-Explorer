@@ -418,24 +418,8 @@ export function createGraphVisualization(
                     nodeEnter.append('title')
                         .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
 
-                    // Add click handler (only fires if not dragging)
-                    if (onNodeClick) {
-                        nodeEnter.on('click', (event: MouseEvent, d: GraphNode) => {
-                            // Ignore if this was a drag
-                            if (wasDragged) return;
+                    // Click handler is now handled in dragEnded to prevent conflict with drag behavior
 
-                            // Highlight selected node
-                            nodesLayer.selectAll('.node-rect')
-                                .attr('stroke', cssVar('--graph-node-stroke'))
-                                .attr('stroke-width', 2);
-                            d3.select(event.currentTarget as Element).select('.node-rect')
-                                .attr('stroke', cssVar('--graph-selected-stroke'))
-                                .attr('stroke-width', 3);
-
-                            selectedNodeId = d.id;
-                            onNodeClick(d.id, d.type, d.knotName);
-                        });
-                    }
 
                     // Add right-click context menu
                     if (onNodeTest) {
@@ -509,6 +493,24 @@ export function createGraphVisualization(
             event.subject.x = dragStartX;
             event.subject.y = dragStartY;
             simulation.alpha(0.1).restart();
+
+            // Treat as click - Select the node
+            if (options?.onNodeClick) {
+                // Reset all nodes
+                nodesLayer.selectAll('.node-rect')
+                    .attr('stroke', cssVar('--graph-node-stroke'))
+                    .attr('stroke-width', 2);
+
+                // Highlight this node
+                nodesLayer.selectAll<SVGGElement, GraphNode>('g')
+                    .filter((d: GraphNode) => d.id === event.subject.id)
+                    .select('.node-rect')
+                    .attr('stroke', cssVar('--graph-selected-stroke'))
+                    .attr('stroke-width', 3);
+
+                selectedNodeId = event.subject.id;
+                options.onNodeClick(event.subject.id, event.subject.type, event.subject.knotName);
+            }
             return;
         }
 
