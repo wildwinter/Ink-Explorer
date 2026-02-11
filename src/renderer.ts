@@ -115,7 +115,7 @@ function handleNodeClick(nodeId: string, nodeType: NodeType, knotName?: string):
     if (rootSource) {
       uiManager.showCodePane(label, rootSource);
     } else {
-      uiManager.showCodePane(label, 'No root content found');
+      uiManager.showCodePaneEmpty(label, 'Root empty');
     }
     saveCurrentFileState();
     return;

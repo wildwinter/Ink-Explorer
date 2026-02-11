@@ -37,11 +37,9 @@ export function structureToGraph(structure: StoryStructure): Graph {
     const links: GraphLink[] = [];
     const nodeIds = new Set<string>();
 
-    // Create root node if there are root-level exits
-    if (structure.rootExits && structure.rootExits.length > 0) {
-        nodes.push({ id: '__root__', label: 'Root', type: 'root' });
-        nodeIds.add('__root__');
-    }
+    // Always create root node — it represents the story entry point
+    nodes.push({ id: '__root__', label: 'Root', type: 'root' });
+    nodeIds.add('__root__');
 
     // Create nodes for all knots and stitches
     structure.knots.forEach((knot: KnotInfo) => {

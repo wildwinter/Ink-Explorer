@@ -135,6 +135,17 @@ export class UIManager {
         // Caller handles saving state
     }
 
+    public showCodePaneEmpty(title: string, message: string): void {
+        const pane = document.getElementById('code-pane');
+        const titleEl = document.getElementById('code-pane-title');
+        const sourceEl = document.getElementById('code-pane-source');
+        if (!pane || !titleEl || !sourceEl) return;
+
+        titleEl.textContent = title;
+        sourceEl.innerHTML = `<span class="code-pane-prompt">${message}</span>`;
+        pane.style.display = 'flex';
+    }
+
     public showCodePanePrompt(): void {
         const pane = document.getElementById('code-pane');
         const titleEl = document.getElementById('code-pane-title');

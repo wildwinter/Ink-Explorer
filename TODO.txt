@@ -1,6 +1,5 @@
 TODO:
 -----
-Test for missing root. (Dinky example project test3)
 Test globals, functions etc.
 Test more complex Ink if you can find some.
 
@@ -37,3 +36,4 @@ BUG: Highlight doesn't work stepping backwards.
 BUG: Root ink is out of order.
 Follow code view
 Remove include lines from root
+Test for missing root. (Dinky example project test3)
