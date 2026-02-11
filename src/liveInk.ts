@@ -73,6 +73,7 @@ export class LiveInkController {
 
     private graphController: GraphController | null = null;
     private outputContainer: HTMLElement | null = null;
+    private onCurrentNodeChange: ((nodeId: string) => void) | null = null;
 
     constructor() {
         this.setupEventListeners();
@@ -84,6 +85,10 @@ export class LiveInkController {
 
     public setStoryNodePaths(paths: string[]) {
         this.storyNodePaths = paths;
+    }
+
+    public setOnCurrentNodeChange(callback: ((nodeId: string) => void) | null) {
+        this.onCurrentNodeChange = callback;
     }
 
     public setStoryJson(json: string | object | null) {
@@ -479,6 +484,9 @@ export class LiveInkController {
         if (!this.graphController) return;
         this.graphController.highlightCurrentNode(this.liveInkCurrentNodeId, this.liveInkVisitedNodes);
         if (this.liveInkFollowEnabled) this.centreOnCurrentNode();
+        if (this.onCurrentNodeChange && this.liveInkCurrentNodeId) {
+            this.onCurrentNodeChange(this.liveInkCurrentNodeId);
+        }
     }
 
     // Helper: nodeId to Path

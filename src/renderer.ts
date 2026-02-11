@@ -246,6 +246,22 @@ function setupCompileResultListener(): void {
       }
       liveInkController.init();
 
+      // Wire code view follow: update code pane when live ink node changes
+      liveInkController.setOnCurrentNodeChange((nodeId) => {
+        if (uiManager.isCodeViewFollowEnabled()) {
+          if (nodeId === '__root__') {
+            handleNodeClick(nodeId, 'root');
+          } else if (nodeId.includes('.')) {
+            handleNodeClick(nodeId, 'stitch', nodeId.split('.')[0]);
+          } else {
+            handleNodeClick(nodeId, 'knot');
+          }
+        }
+      });
+
+      // Initialize code view toolbar (follow checkbox persistence)
+      uiManager.initCodeViewToolbar();
+
     } else {
       console.error('❌ Ink compilation failed!');
       console.error('Errors:', result.errors);

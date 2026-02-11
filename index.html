@@ -15,7 +15,13 @@
       <div id="code-pane" class="code-pane">
         <div class="code-pane-header">
           <span id="code-pane-title">Ink Source</span>
-          <button id="code-pane-close" class="code-pane-close">&times;</button>
+          <div class="code-pane-header-controls">
+            <label class="code-pane-follow" title="Automatically show code for the current Live Ink node">
+              <input type="checkbox" id="code-view-follow"/>
+              <span>Follow</span>
+            </label>
+            <button id="code-pane-close" class="code-pane-close">&times;</button>
+          </div>
         </div>
         <div class="code-pane-content">
           <pre id="code-pane-source"><span class="code-pane-prompt">Click on a node to view the code</span></pre>

@@ -183,6 +183,27 @@ body {
   flex-shrink: 0;
 }
 
+.code-pane-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-pane-follow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.code-pane-follow input {
+  margin: 0;
+}
+
 .code-pane-close {
   background: transparent;
   border: none;

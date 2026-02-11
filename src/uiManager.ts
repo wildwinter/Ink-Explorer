@@ -14,6 +14,8 @@ export interface Tab {
 
 export class UIManager {
 
+    private codeViewFollowEnabled = true;
+
     constructor() {
         this.setupEventListeners();
     }
@@ -157,5 +159,30 @@ export class UIManager {
     public isCodePaneOpen(): boolean {
         const pane = document.getElementById('code-pane');
         return pane ? pane.style.display !== 'none' : false;
+    }
+
+    public initCodeViewToolbar(): void {
+        const followCheckbox = document.getElementById('code-view-follow') as HTMLInputElement | null;
+        if (!followCheckbox) return;
+
+        if (window.api && window.api.loadPref) {
+            window.api.loadPref('codeViewFollow').then(val => {
+                this.codeViewFollowEnabled = val === null ? true : val === 'true';
+                if (followCheckbox) followCheckbox.checked = this.codeViewFollowEnabled;
+            });
+        } else {
+            followCheckbox.checked = this.codeViewFollowEnabled;
+        }
+
+        followCheckbox.onchange = () => {
+            this.codeViewFollowEnabled = followCheckbox.checked;
+            if (window.api && window.api.savePref) {
+                window.api.savePref('codeViewFollow', String(this.codeViewFollowEnabled));
+            }
+        };
+    }
+
+    public isCodeViewFollowEnabled(): boolean {
+        return this.codeViewFollowEnabled;
     }
 }
