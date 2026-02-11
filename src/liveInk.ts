@@ -56,7 +56,13 @@ export class LiveInkController {
     private currentStoryJson: string | object | null = null;
     private currentStartNode: string | null = null;
     private liveInkStory: InstanceType<typeof Story> | null = null;
-    private liveInkStateStack: Array<{ state: string; turnElement: HTMLElement }> = [];
+    private liveInkStateStack: Array<{
+        state: string;
+        turnElement: HTMLElement;
+        currentNodeId: string | null;
+        previousNodeId: string | null;
+        visitedNodes: Map<string, number>;
+    }> = [];
     private liveInkCurrentTurn: HTMLElement | null = null;
     private liveInkIsDinkMode = false;
     private liveInkFollowEnabled = true;
@@ -362,9 +368,15 @@ export class LiveInkController {
             this.liveInkVisitedNodes.delete(this.liveInkCurrentNodeId);
         }
 
-        // Save state for back navigation
+        // Save state for back navigation (including highlight state)
         const state = this.liveInkStory.state.toJson();
-        this.liveInkStateStack.push({ state, turnElement: this.liveInkCurrentTurn });
+        this.liveInkStateStack.push({
+            state,
+            turnElement: this.liveInkCurrentTurn,
+            currentNodeId: this.liveInkCurrentNodeId,
+            previousNodeId: this.liveInkPreviousNodeId,
+            visitedNodes: new Map(this.liveInkVisitedNodes),
+        });
         this.updateButtons();
         this.updateCurrentNodeHighlight();
 
@@ -436,21 +448,14 @@ export class LiveInkController {
         }
 
         this.liveInkCurrentTurn = prevState.turnElement;
+
+        // Restore highlight state from the stack
+        this.liveInkCurrentNodeId = prevState.currentNodeId;
+        this.liveInkPreviousNodeId = prevState.previousNodeId;
+        this.liveInkVisitedNodes = new Map(prevState.visitedNodes);
+
         this.renderChoices();
         this.updateButtons();
-
-        // Restore IDs from story state
-        if (this.liveInkStory) {
-            const pathStr = this.liveInkStory.state.currentPathString;
-            if (pathStr) {
-                const parsed = this.pathToNodeId(pathStr);
-                if (parsed) {
-                    this.liveInkCurrentNodeId = parsed;
-                    this.liveInkPreviousNodeId = parsed; // Assume sync for back
-                }
-            }
-        }
-
         this.updateCurrentNodeHighlight();
     }
 

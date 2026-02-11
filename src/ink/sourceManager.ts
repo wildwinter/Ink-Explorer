@@ -56,12 +56,19 @@ export function extractStitchSource(knotName: string, stitchName: string, source
 
 /**
  * Extracts root content (everything before the first knot or stitch) from each source file.
+ * The main/root ink file (first entry in the map) is placed last, since INCLUDEd files
+ * are evaluated in the order encountered before the root file's own content.
  */
 export function extractRootSource(sourceFiles: Map<string, string>): string {
     const firstKnotOrStitch = /^={1,3}\s*[a-zA-Z_][a-zA-Z0-9_]*\s*={0,3}\s*$/m;
     const sections: string[] = [];
 
-    for (const [filename, content] of sourceFiles) {
+    // Reorder: included files first, root file last
+    const entries = Array.from(sourceFiles.entries());
+    const mainEntry = entries[0];
+    const reordered = entries.length > 1 ? [...entries.slice(1), mainEntry] : entries;
+
+    for (const [filename, content] of reordered) {
         const match = firstKnotOrStitch.exec(content);
         const preamble = match ? content.substring(0, match.index).trimEnd() : content.trimEnd();
         if (preamble.length > 0) {

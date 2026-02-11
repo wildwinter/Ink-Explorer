@@ -105,7 +105,7 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
     });
 
     // Compile - this may call errorHandler multiple times
-    let story = null;
+    let story: ReturnType<Compiler['Compile']> | null = null;
     try {
       story = compiler.Compile();
     } catch (compileError) {
@@ -167,7 +167,8 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
       structure,
       sourceFiles: fileHandler.loadedFiles,
       mainFilename,
-      storyJson: story.ToJson()
+      // @ts-ignore - ToJson exists on Story but inkjs 2.3.2 compiler re-export types are broken
+      storyJson: story.ToJson() as string
     };
 
   } catch (error) {
