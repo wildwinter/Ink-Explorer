@@ -70,7 +70,9 @@ export function extractRootSource(sourceFiles: Map<string, string>): string {
 
     for (const [filename, content] of reordered) {
         const match = firstKnotOrStitch.exec(content);
-        const preamble = match ? content.substring(0, match.index).trimEnd() : content.trimEnd();
+        let preamble = match ? content.substring(0, match.index).trimEnd() : content.trimEnd();
+        // Remove INCLUDE lines — they're just file-loading directives, not story content
+        preamble = preamble.split('\n').filter(line => !/^\s*INCLUDE\b/.test(line)).join('\n').trimEnd();
         if (preamble.length > 0) {
             sections.push(`// --------- ${filename} ---------\n${preamble}\n`);
         }
