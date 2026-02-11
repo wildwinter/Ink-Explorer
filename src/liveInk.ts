@@ -301,7 +301,13 @@ export class LiveInkController {
                     // but usually the runtime handles this hierarchy.
                     // Let's just set it.
                     const parsed = this.pathToNodeId(nodePath);
-                    if (parsed) this.liveInkCurrentNodeId = parsed;
+                    if (parsed) {
+                        this.liveInkCurrentNodeId = parsed;
+                        // Add to seenNodeIds in order if not already present
+                        if (!seenNodeIds.includes(nodePath)) {
+                            seenNodeIds.push(nodePath);
+                        }
+                    }
                 }
             }
 
@@ -356,14 +362,7 @@ export class LiveInkController {
             }
         }
 
-        // Comparer visit counts
-        for (const nodePath of this.storyNodePaths) {
-            const before = visitCountsBefore.get(nodePath) || 0;
-            const after = this.liveInkStory.state.VisitCountAtPathString(nodePath) || 0;
-            if (after > before && !seenNodeIds.includes(nodePath)) {
-                seenNodeIds.push(nodePath);
-            }
-        }
+
 
         // 1. Fade all existing visited nodes
         for (const [id, opacity] of this.liveInkVisitedNodes) {
