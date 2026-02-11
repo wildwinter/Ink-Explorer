@@ -3,6 +3,8 @@ TODO:
 BUG: Highlight doesn't work stepping backwards.
 BUG: Root ink is out of order.
 
+Test for missing root. (Dinky example project test3)
+Test globals, functions etc.
 Test more complex Ink if you can find some.
 
 Add variable tracking.
