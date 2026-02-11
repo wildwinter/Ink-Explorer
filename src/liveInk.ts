@@ -263,6 +263,9 @@ export class LiveInkController {
             visitCountsBefore.set(nodePath, this.liveInkStory.state.VisitCountAtPathString(nodePath) || 0);
         }
 
+        // Initialize local visit counts for the loop to track incremental changes
+        const currentVisitCounts = new Map<string, number>(visitCountsBefore);
+
         // Seed the previous node
         const seenNodeIds: string[] = [];
         if (this.liveInkCurrentNodeId) {
@@ -284,6 +287,22 @@ export class LiveInkController {
             if (pathStr) {
                 const parsed = this.pathToNodeId(pathStr);
                 if (parsed) this.liveInkCurrentNodeId = parsed;
+            }
+
+            // Fallback/Override: Check if any visit counts incremented
+            // This catches cases where currentPathString is null (e.g. -> DONE) but we clearly visited a node
+            for (const nodePath of this.storyNodePaths) {
+                const oldVal = currentVisitCounts.get(nodePath) || 0;
+                const newVal = this.liveInkStory.state.VisitCountAtPathString(nodePath) || 0;
+                if (newVal > oldVal) {
+                    currentVisitCounts.set(nodePath, newVal);
+                    // If we found a visit change, this is likely the active node for this text
+                    // We prefer longer paths (stitches) over shorter ones (knots) if multiple changed, 
+                    // but usually the runtime handles this hierarchy.
+                    // Let's just set it.
+                    const parsed = this.pathToNodeId(nodePath);
+                    if (parsed) this.liveInkCurrentNodeId = parsed;
+                }
             }
 
             if (!text) continue;
