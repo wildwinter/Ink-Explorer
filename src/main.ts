@@ -5,6 +5,7 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 import { compileInk } from './ink/compiler.js';
 import { RecentFilesManager } from './utils/recentFiles.js';
+import pkg from '../package.json'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -470,6 +471,18 @@ function createMenu(): void {
 }
 
 app.whenReady().then(() => {
+  // Set app name for About menu (macOS)
+  app.name = 'InkExplorer';
+
+  // Configure About panel (macOS)
+  app.setAboutPanelOptions({
+    applicationName: 'Ink Explorer',
+    applicationVersion: app.getVersion(),
+    version: '', // Suppress build version (redundant)
+    copyright: 'Copyright © 2026 Ian Thomas',
+    credits: `Powered by inkjs v${(pkg as any).inkjsVersion}`
+  });
+
   // Load recent files from disk
   recentFilesManager.load();
 

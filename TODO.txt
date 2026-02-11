@@ -5,7 +5,6 @@ Add loading/saving test sets of variables.
 
 Add stress testing.
 
-Fix up About...
 Proper icons.
 Proper documentation.
 
@@ -37,3 +36,4 @@ Test for missing root. (Dinky example project test3)
 Test globals, functions etc.
 Test more complex Ink if you can find some.
 Reload on refocus
+Fix up About...
