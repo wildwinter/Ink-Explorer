@@ -13,6 +13,7 @@ import path from 'path';
 export class BomStrippingFileHandler {
   private rootPath: string;
   public loadedFiles: Map<string, string> = new Map();
+  public resolvedPaths: Map<string, string> = new Map(); // basename → full path
 
   constructor(rootPath: string) {
     this.rootPath = rootPath;
@@ -42,6 +43,7 @@ export class BomStrippingFileHandler {
     // Track loaded file and its content
     const filename = path.basename(fullFilename);
     this.loadedFiles.set(filename, content);
+    this.resolvedPaths.set(filename, fullFilename);
 
     return content;
   }

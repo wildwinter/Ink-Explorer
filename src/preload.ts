@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('api', {
       callback(theme);
     });
   },
+  // Listen for request to save state (before auto-reload)
+  onRequestSaveState: (callback: () => void) => {
+    ipcRenderer.on('request-save-state', () => {
+      callback();
+    });
+  },
   // Save/load a simple preference
   savePref: (key: string, value: string) => {
     ipcRenderer.send('save-pref', key, value);

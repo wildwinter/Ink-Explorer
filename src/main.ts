@@ -23,6 +23,11 @@ const BUNDLE_ID = 'net.wildwinter.inkexplorer';
 const REG_KEY = 'HKCU\\Software\\InkExplorer';
 let boundsTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// Source file change detection
+let currentInkFilePath: string | null = null;
+let sourceFileMtimes: Map<string, number> = new Map(); // full path → mtimeMs
+let isRecompiling = false;
+
 // Theme management
 type ThemeSetting = 'light' | 'dark' | 'system';
 let currentThemeSetting: ThemeSetting = 'system';
@@ -127,9 +132,44 @@ function setTheme(setting: ThemeSetting): void {
   createMenu(); // rebuild to update radio check marks
 }
 
+/**
+ * Snapshots the mtimes of all source files for later change detection.
+ */
+function storeSourceFileMtimes(filePaths: string[]): void {
+  sourceFileMtimes.clear();
+  for (const fp of filePaths) {
+    try {
+      const stat = fs.statSync(fp);
+      sourceFileMtimes.set(fp, stat.mtimeMs);
+    } catch { /* file may have been deleted */ }
+  }
+}
+
+/**
+ * Checks whether any tracked source file has been modified since compilation.
+ */
+function checkSourceFilesChanged(): boolean {
+  for (const [fp, savedMtime] of sourceFileMtimes) {
+    try {
+      const stat = fs.statSync(fp);
+      if (stat.mtimeMs !== savedMtime) return true;
+    } catch {
+      // File no longer exists — treat as changed
+      return true;
+    }
+  }
+  return false;
+}
+
 // Function to compile Ink file and send results to renderer
 async function compileAndLogInk(inkFilePath: string): Promise<void> {
   const result = await compileInk(inkFilePath);
+
+  // Track source files for change detection on focus
+  currentInkFilePath = inkFilePath;
+  if (result.sourceFilePaths) {
+    storeSourceFileMtimes(result.sourceFilePaths);
+  }
 
   // Send result to renderer for logging
   // Convert sourceFiles Map to plain object for reliable IPC serialization
@@ -235,6 +275,24 @@ function createWindow(): void {
   // Save window bounds on resize and move
   mainWindow.on('resize', saveWindowBounds);
   mainWindow.on('move', saveWindowBounds);
+
+  // Auto-reload when source files change on focus
+  mainWindow.on('focus', () => {
+    if (!currentInkFilePath || isRecompiling) return;
+    if (sourceFileMtimes.size === 0) return;
+    if (!checkSourceFilesChanged()) return;
+
+    isRecompiling = true;
+    // Ask renderer to flush its current state to prefs, then recompile
+    mainWindow!.webContents.send('request-save-state');
+    setTimeout(async () => {
+      try {
+        await compileAndLogInk(currentInkFilePath!);
+      } finally {
+        isRecompiling = false;
+      }
+    }, 50);
+  });
 
   // In development, load from Vite dev server; in production, load built files
   if (isDev) {

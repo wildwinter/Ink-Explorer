@@ -13,6 +13,7 @@ declare global {
     api: {
       onCompileResult: (callback: (result: CompilationResult) => void) => void;
       onToggleCodePane: (callback: () => void) => void;
+      onRequestSaveState: (callback: () => void) => void;
       saveFileState: (filePath: string, state: unknown) => void;
       onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => void;
       savePref: (key: string, value: string) => void;
@@ -42,6 +43,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (window.api) {
     setupCompileResultListener();
     window.api.onToggleCodePane(() => uiManager.toggleCodePane());
+    window.api.onRequestSaveState(() => saveCurrentFileState());
     window.api.onThemeChanged((theme) => {
       uiManager.applyTheme(theme);
       // Force graph to re-read CSS variables

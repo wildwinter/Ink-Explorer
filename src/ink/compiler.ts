@@ -18,6 +18,7 @@ export interface CompilationResult {
   storyInfo?: StoryInfo;
   structure?: StoryStructure;
   sourceFiles?: Map<string, string>; // filename -> content
+  sourceFilePaths?: string[]; // absolute paths of all source files (main + includes)
   mainFilename?: string; // The main file that was loaded
   storyJson?: string; // Compiled story JSON for inkjs runtime
 }
@@ -92,6 +93,7 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
     // Track the main file
     const mainFilename = path.basename(inkFilePath);
     fileHandler.loadedFiles.set(mainFilename, inkContent);
+    fileHandler.resolvedPaths.set(mainFilename, inkFilePath);
 
     // Create error handler
     const errorHandling = createErrorHandler();
@@ -154,6 +156,7 @@ export async function compileInk(inkFilePath: string): Promise<CompilationResult
       storyInfo,
       structure,
       sourceFiles: fileHandler.loadedFiles,
+      sourceFilePaths: Array.from(fileHandler.resolvedPaths.values()),
       mainFilename,
       // @ts-ignore - ToJson exists on Story but inkjs 2.3.2 compiler re-export types are broken
       storyJson: story.ToJson() as string
