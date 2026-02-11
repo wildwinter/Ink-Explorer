@@ -8,7 +8,8 @@ CONST TESTC = 20
 
 === Main1
 This is Main 1
--> TunnelTest ->
+-> TunnelTest1 ->
+-> TunnelTest2 ->
 -> DONE
 
 === Main2
@@ -19,8 +20,12 @@ This is Main 2
 === function Fred()
 ~ return
 
-== TunnelTest
-Tunnelling
+== TunnelTest1
+Tunnelling1
+->->
+
+== TunnelTest2
+Tunnelling2
 ->->
 
 == thread_example ==

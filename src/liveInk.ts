@@ -91,6 +91,10 @@ export class LiveInkController {
         this.onCurrentNodeChange = callback;
     }
 
+    public getCurrentNodeId(): string | null {
+        return this.liveInkCurrentNodeId;
+    }
+
     public setStoryJson(json: string | object | null) {
         this.currentStoryJson = json;
         // Reset state when story changes?

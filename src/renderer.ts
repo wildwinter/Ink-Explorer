@@ -42,7 +42,22 @@ window.addEventListener('DOMContentLoaded', () => {
   // Set up IPC listener after DOM is ready and API is available
   if (window.api) {
     setupCompileResultListener();
-    window.api.onToggleCodePane(() => uiManager.toggleCodePane());
+    window.api.onToggleCodePane(() => {
+      const wasOpen = uiManager.isCodePaneOpen();
+      uiManager.toggleCodePane();
+      // When opening the pane with Follow enabled, show the relevant node
+      if (!wasOpen && uiManager.isCodeViewFollowEnabled()) {
+        const liveNodeId = liveInkController.getCurrentNodeId();
+        if (liveNodeId) {
+          showCodeForNode(liveNodeId);
+        } else {
+          const selectedId = currentGraphController?.getSelectedNodeId();
+          if (selectedId) {
+            showCodeForNode(selectedId);
+          }
+        }
+      }
+    });
     window.api.onRequestSaveState(() => saveCurrentFileState());
     window.api.onThemeChanged((theme) => {
       uiManager.applyTheme(theme);
@@ -103,10 +118,24 @@ function debouncedSaveTransform(): void {
 }
 
 /**
+ * Shows code for a node ID, deriving the node type from the ID format.
+ */
+function showCodeForNode(nodeId: string): void {
+  if (nodeId === '__root__') {
+    handleNodeClick(nodeId, 'root');
+  } else if (nodeId.includes('.')) {
+    handleNodeClick(nodeId, 'stitch', nodeId.split('.')[0]);
+  } else {
+    handleNodeClick(nodeId, 'knot');
+  }
+}
+
+/**
  * Handles a node click from the graph visualizer.
  */
 function handleNodeClick(nodeId: string, nodeType: NodeType, knotName?: string): void {
   if (!currentSourceFiles) return;
+  if (!uiManager.isCodePaneOpen()) return;
 
   let result: { source: string; filename: string } | null = null;
   let label: string;
@@ -250,14 +279,8 @@ function setupCompileResultListener(): void {
 
       // Wire code view follow: update code pane when live ink node changes
       liveInkController.setOnCurrentNodeChange((nodeId) => {
-        if (uiManager.isCodeViewFollowEnabled()) {
-          if (nodeId === '__root__') {
-            handleNodeClick(nodeId, 'root');
-          } else if (nodeId.includes('.')) {
-            handleNodeClick(nodeId, 'stitch', nodeId.split('.')[0]);
-          } else {
-            handleNodeClick(nodeId, 'knot');
-          }
+        if (uiManager.isCodeViewFollowEnabled() && uiManager.isCodePaneOpen()) {
+          showCodeForNode(nodeId);
         }
       });
 
