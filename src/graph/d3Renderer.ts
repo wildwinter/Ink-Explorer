@@ -28,6 +28,93 @@ const getNodeDimensions = (_node: GraphNode) => {
     return { width: 100, height: 50 };
 };
 
+// Helper: split a label into break-point candidates (camelCase, underscores, dots)
+function splitLabelParts(label: string): string[] {
+    // Split on underscores, dots, and camelCase boundaries
+    return label
+        .replace(/([a-z])([A-Z])/g, '$1\0$2')  // camelCase
+        .replace(/[_.]/g, m => m + '\0')          // after _ or .
+        .split('\0')
+        .filter(s => s.length > 0);
+}
+
+// Helper: wrap an SVG text element to fit within maxWidth, max 2 lines, ellipsis if needed
+function wrapLabel(textEl: SVGTextElement, label: string, maxWidth: number): void {
+    // First, try the label as a single line
+    textEl.textContent = label;
+    if (textEl.getComputedTextLength() <= maxWidth) {
+        // Fits on one line — center vertically
+        textEl.setAttribute('y', '5');
+        return;
+    }
+
+    // Need to split into lines. Try breaking at natural points first.
+    const parts = splitLabelParts(label);
+    let line1 = '';
+    let remaining = '';
+
+    // Greedily fit as many parts as possible on line 1
+    for (let i = 0; i < parts.length; i++) {
+        const candidate = line1 + parts[i];
+        textEl.textContent = candidate;
+        if (textEl.getComputedTextLength() > maxWidth && line1.length > 0) {
+            remaining = parts.slice(i).join('');
+            break;
+        }
+        line1 = candidate;
+        if (i === parts.length - 1) {
+            remaining = '';
+        }
+    }
+
+    // If greedy split didn't work (single long part), force-split by character
+    if (!remaining && textEl.getComputedTextLength() > maxWidth) {
+        for (let i = label.length - 1; i > 0; i--) {
+            textEl.textContent = label.substring(0, i);
+            if (textEl.getComputedTextLength() <= maxWidth) {
+                line1 = label.substring(0, i);
+                remaining = label.substring(i);
+                break;
+            }
+        }
+    }
+
+    if (!remaining) {
+        // Everything fits on one line after all
+        textEl.textContent = label;
+        textEl.setAttribute('y', '5');
+        return;
+    }
+
+    // Truncate line 2 with ellipsis if needed
+    let line2 = remaining;
+    textEl.textContent = line2;
+    if (textEl.getComputedTextLength() > maxWidth) {
+        for (let i = line2.length - 1; i > 0; i--) {
+            textEl.textContent = line2.substring(0, i) + '\u2026';
+            if (textEl.getComputedTextLength() <= maxWidth) {
+                line2 = line2.substring(0, i) + '\u2026';
+                break;
+            }
+        }
+    }
+
+    // Build two tspan elements, vertically centered in the 50px node
+    textEl.textContent = '';
+    const tspan1 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+    tspan1.setAttribute('x', '0');
+    tspan1.setAttribute('dy', '-0.4em');
+    tspan1.textContent = line1;
+
+    const tspan2 = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+    tspan2.setAttribute('x', '0');
+    tspan2.setAttribute('dy', '1.2em');
+    tspan2.textContent = line2;
+
+    textEl.appendChild(tspan1);
+    textEl.appendChild(tspan2);
+}
+
 // Helper function to calculate intersection point of line with rectangle
 const getIntersectionPoint = (
     cx: number, cy: number, // center of rectangle
@@ -401,10 +488,9 @@ export function createGraphVisualization(
                         .attr('stroke-width', 2)
                         .style('cursor', 'pointer');
 
-                    // Add label
+                    // Add label (with wrapping for long names)
                     nodeEnter.append('text')
                         .attr('class', 'node-label')
-                        .text(d => d.label)
                         .attr('x', 0)
                         .attr('y', 5)
                         .attr('text-anchor', 'middle')
@@ -412,7 +498,10 @@ export function createGraphVisualization(
                         .attr('font-size', '12px')
                         .attr('font-weight', d => (d.type === 'knot' || d.type === 'root') ? 'bold' : 'normal')
                         .style('pointer-events', 'none')
-                        .style('user-select', 'none');
+                        .style('user-select', 'none')
+                        .each(function(d) {
+                            wrapLabel(this, d.label, 90);
+                        });
 
                     // Add tooltip
                     nodeEnter.append('title')

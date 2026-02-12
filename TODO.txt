@@ -2,9 +2,9 @@ TODO:
 -----
 Add variable tracking.
 Add loading/saving test sets of variables.
-Deal with long names in nodes
 
 Add stress testing.
+Componentise.
 
 Proper icons.
 Proper documentation.
@@ -38,3 +38,4 @@ Test globals, functions etc.
 Test more complex Ink if you can find some.
 Reload on refocus
 Fix up About...
+Deal with long names in nodes
