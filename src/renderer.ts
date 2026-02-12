@@ -5,12 +5,8 @@ import { createGraphVisualization } from './graphVisualizer.js';
 import type { GraphController, NodeType } from './graphVisualizer.js';
 import { UIManager } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
+import { VariablesController, VARIABLES_HTML } from './variables.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
-
-const VARIABLES_HTML = `
-<div class="variables-container">
-  <div class="live-ink-prompt">No variables to display.</div>
-</div>`;
 
 // Extend Window interface for our API
 declare global {
@@ -36,6 +32,7 @@ let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 // Controllers
 const uiManager = new UIManager();
 const liveInkController = new LiveInkController();
+const variablesController = new VariablesController();
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Ink Explorer loaded - use File > Load Ink... to examine an Ink file');
@@ -108,6 +105,9 @@ function showEmptyState(): void {
   if (output) {
     liveInkController.setOutputContainer(output);
   }
+
+  // Connect Variables controller
+  variablesController.init();
 }
 
 /**
@@ -294,6 +294,18 @@ function setupCompileResultListener(): void {
       }
       liveInkController.init();
 
+      // Re-connect Variables controller
+      variablesController.init();
+
+      // Wire story state changes to variables panel
+      liveInkController.setOnStoryStateChange((story) => {
+        if (story) {
+          variablesController.updateFromStory(story);
+        } else {
+          variablesController.clear();
+        }
+      });
+
       // Wire code view follow: update code pane when live ink node changes
       liveInkController.setOnCurrentNodeChange((nodeId) => {
         if (uiManager.isCodeViewFollowEnabled() && uiManager.isCodePaneOpen()) {
@@ -345,6 +357,10 @@ function setupCompileResultListener(): void {
         liveInkController.setOutputContainer(output);
       }
       liveInkController.init();
+
+      // Re-connect Variables controller and clear
+      variablesController.init();
+      variablesController.clear();
     }
 
     console.log('\n===============================\n');

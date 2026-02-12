@@ -74,6 +74,7 @@ export class LiveInkController {
     private graphController: GraphController | null = null;
     private outputContainer: HTMLElement | null = null;
     private onCurrentNodeChange: ((nodeId: string) => void) | null = null;
+    private onStoryStateChange: ((story: InstanceType<typeof Story> | null) => void) | null = null;
 
     constructor() {
         this.setupEventListeners();
@@ -89,6 +90,10 @@ export class LiveInkController {
 
     public setOnCurrentNodeChange(callback: ((nodeId: string) => void) | null) {
         this.onCurrentNodeChange = callback;
+    }
+
+    public setOnStoryStateChange(callback: ((story: InstanceType<typeof Story> | null) => void) | null) {
+        this.onStoryStateChange = callback;
     }
 
     public getCurrentNodeId(): string | null {
@@ -246,6 +251,7 @@ export class LiveInkController {
             p.style.color = 'red';
             p.textContent = 'Runtime Error: ' + (e instanceof Error ? e.message : String(e));
             this.outputContainer.appendChild(p);
+            if (this.onStoryStateChange) this.onStoryStateChange(this.liveInkStory);
         }
     }
 
@@ -418,6 +424,8 @@ export class LiveInkController {
             this.liveInkCurrentTurn.appendChild(endP);
             endP.scrollIntoView({ behavior: 'smooth' });
         }
+
+        if (this.onStoryStateChange) this.onStoryStateChange(this.liveInkStory);
     }
 
     private renderChoices() {
@@ -484,6 +492,8 @@ export class LiveInkController {
         this.renderChoices();
         this.updateButtons();
         this.updateCurrentNodeHighlight();
+
+        if (this.onStoryStateChange) this.onStoryStateChange(this.liveInkStory);
     }
 
     private updateButtons() {

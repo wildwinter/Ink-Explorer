@@ -362,9 +362,127 @@ body {
   overflow: hidden;
 }
 
+.tab-content:has(.variables-container) {
+  padding: 0;
+  overflow: hidden;
+}
+
 .variables-container {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.variables-search-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.variables-search {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.variables-search:focus {
+  border-color: var(--accent-blue);
+}
+
+.variables-search::placeholder {
+  color: var(--text-muted);
+}
+
+.variables-table-wrapper {
+  flex: 1;
   overflow-y: auto;
+  padding: 0;
+}
+
+.variables-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.variables-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  z-index: 1;
+}
+
+.variables-table tbody td {
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  vertical-align: middle;
+}
+
+.variable-name {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.variable-value {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  color: var(--text-bright);
+  min-width: 60px;
+}
+
+.variable-value[contenteditable="true"] {
+  cursor: text;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  outline: none;
+}
+
+.variable-value[contenteditable="true"]:focus {
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
+.variable-value.readonly {
+  color: var(--text-muted);
+}
+
+.variable-value.invalid {
+  background: rgba(231, 76, 60, 0.2);
+  transition: background 0.1s;
+}
+
+.variable-type {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.var-col-name {
+  width: 40%;
+}
+
+.var-col-value {
+  width: 40%;
+}
+
+.var-col-type {
+  width: 20%;
 }
 
 .tab-content.active {
