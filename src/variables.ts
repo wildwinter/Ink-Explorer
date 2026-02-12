@@ -40,6 +40,8 @@ export class VariablesController {
     private currentStory: InstanceType<typeof Story> | null = null;
     private searchTerm = '';
     private variableEntries: VariableEntry[] = [];
+    private activeDropdown: HTMLElement | null = null;
+    private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
     public init() {
         const searchInput = document.getElementById('variables-search') as HTMLInputElement | null;
@@ -55,12 +57,14 @@ export class VariablesController {
     public updateFromStory(story: InstanceType<typeof Story>) {
         this.currentStory = story;
         this.variableEntries = this.enumerateVariables(story);
+        this.closeListDropdown();
         this.renderTable();
     }
 
     public clear() {
         this.currentStory = null;
         this.variableEntries = [];
+        this.closeListDropdown();
         this.renderTable();
     }
 
@@ -73,7 +77,7 @@ export class VariablesController {
             const inkObj = vars.GetVariableWithName(name);
             const rawValue = vars.$(name);
             const { type, displayValue } = this.classifyVariable(inkObj, rawValue);
-            const editable = type === 'int' || type === 'float' || type === 'string' || type === 'bool';
+            const editable = type === 'int' || type === 'float' || type === 'string' || type === 'bool' || type === 'list';
 
             return { name, type, value: rawValue, displayValue, editable };
         });
@@ -167,7 +171,14 @@ export class VariablesController {
             // Value cell
             const tdValue = document.createElement('td');
             tdValue.className = 'variable-value';
-            if (entry.editable) {
+            if (entry.type === 'list' && entry.editable) {
+                tdValue.classList.add('list-editable');
+                tdValue.textContent = entry.displayValue;
+                tdValue.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showListDropdown(tdValue, entry);
+                });
+            } else if (entry.editable) {
                 tdValue.contentEditable = 'true';
                 tdValue.spellcheck = false;
                 tdValue.textContent = entry.displayValue;
@@ -224,6 +235,145 @@ export class VariablesController {
         });
 
         td.addEventListener('blur', commit);
+    }
+
+    private showListDropdown(td: HTMLTableCellElement, entry: VariableEntry) {
+        this.closeListDropdown();
+        if (!this.currentStory) return;
+
+        const inkObj = this.currentStory.variablesState.GetVariableWithName(entry.name) as any;
+        if (!inkObj || inkObj.valueType !== VALUE_TYPE_LIST) return;
+
+        const inkList = inkObj.value;
+        if (!inkList) return;
+
+        // Get all possible items from the list's origins
+        const allItems = inkList.all;
+        if (!allItems) return;
+
+        // Collect items sorted by their numeric value
+        const items: { serialized: string; itemName: string; numericValue: number; selected: boolean }[] = [];
+        for (const [serializedKey, numericValue] of allItems) {
+            // Parse the serialized key to get the item name
+            let itemName: string;
+            try {
+                const parsed = JSON.parse(serializedKey);
+                itemName = parsed.itemName || serializedKey;
+            } catch {
+                itemName = serializedKey;
+            }
+            items.push({
+                serialized: serializedKey,
+                itemName,
+                numericValue: numericValue as number,
+                selected: inkList.has(serializedKey),
+            });
+        }
+        items.sort((a, b) => a.numericValue - b.numericValue);
+
+        // Build dropdown
+        const dropdown = document.createElement('div');
+        dropdown.className = 'list-dropdown';
+
+        for (const item of items) {
+            const row = document.createElement('label');
+            row.className = 'list-dropdown-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = item.selected;
+            checkbox.addEventListener('change', () => {
+                this.applyListChange(td, entry, items, dropdown);
+            });
+
+            const label = document.createElement('span');
+            label.textContent = item.itemName;
+
+            row.appendChild(checkbox);
+            row.appendChild(label);
+            dropdown.appendChild(row);
+        }
+
+        // Position relative to the td
+        const rect = td.getBoundingClientRect();
+        dropdown.style.top = `${rect.bottom + 2}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.minWidth = `${rect.width}px`;
+
+        document.body.appendChild(dropdown);
+        this.activeDropdown = dropdown;
+
+        // Close on outside click (next tick so this click doesn't trigger it)
+        requestAnimationFrame(() => {
+            this.outsideClickHandler = (e: MouseEvent) => {
+                if (!dropdown.contains(e.target as Node)) {
+                    this.closeListDropdown();
+                }
+            };
+            document.addEventListener('click', this.outsideClickHandler, true);
+        });
+    }
+
+    private applyListChange(
+        td: HTMLTableCellElement,
+        entry: VariableEntry,
+        items: { serialized: string; itemName: string; numericValue: number }[],
+        dropdown: HTMLElement
+    ) {
+        if (!this.currentStory) return;
+
+        const inkObj = this.currentStory.variablesState.GetVariableWithName(entry.name) as any;
+        if (!inkObj || inkObj.valueType !== VALUE_TYPE_LIST) return;
+
+        const originalList = inkObj.value;
+
+        // Read checked state from the dropdown checkboxes
+        const checkboxes = dropdown.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        const selectedSerializedKeys: string[] = [];
+        const selectedNames: string[] = [];
+        checkboxes.forEach((cb, i) => {
+            if (cb.checked) {
+                selectedSerializedKeys.push(items[i].serialized);
+                selectedNames.push(items[i].itemName);
+            }
+        });
+
+        // Build a new InkList: start from the .all set and remove unselected items
+        // This preserves the origins reference
+        const newList = originalList.all;
+        newList.origins = originalList.origins;
+        newList.SetInitialOriginNames(originalList.originNames);
+
+        // Remove items not in the selected set
+        for (const [key] of [...newList]) {
+            if (!selectedSerializedKeys.includes(key)) {
+                newList.delete(key);
+            }
+        }
+
+        // Write back
+        try {
+            this.currentStory.variablesState.$(entry.name, newList);
+        } catch (e) {
+            console.error('Failed to set list variable:', e);
+            return;
+        }
+
+        // Update display
+        const displayValue = selectedNames.length > 0 ? selectedNames.join(', ') : '(empty list)';
+        td.textContent = displayValue;
+        entry.displayValue = displayValue;
+    }
+
+    private closeListDropdown() {
+        if (this.activeDropdown) {
+            this.activeDropdown.remove();
+            this.activeDropdown = null;
+        }
+        if (this.outsideClickHandler) {
+            document.removeEventListener('click', this.outsideClickHandler, true);
+            this.outsideClickHandler = null;
+        }
     }
 
     private trySetVariable(name: string, rawValue: string, type: VarType): { success: boolean } {

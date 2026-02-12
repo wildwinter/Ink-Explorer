@@ -485,6 +485,47 @@ body {
   width: 20%;
 }
 
+.variable-value.list-editable {
+  cursor: pointer;
+}
+
+.variable-value.list-editable:hover {
+  background: var(--bg-primary);
+  border-radius: 3px;
+}
+
+.list-dropdown {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 2px 8px var(--shadow-popup);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.list-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.list-dropdown-item:hover {
+  background: var(--accent-blue-hover);
+  color: var(--text-bright);
+}
+
+.list-dropdown-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 .tab-content.active {
   display: block;
 }
