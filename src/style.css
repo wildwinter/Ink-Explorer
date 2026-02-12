@@ -362,6 +362,11 @@ body {
   overflow: hidden;
 }
 
+.variables-container {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .tab-content.active {
   display: block;
 }

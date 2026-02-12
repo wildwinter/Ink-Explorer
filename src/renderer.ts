@@ -7,6 +7,11 @@ import { UIManager } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
 
+const VARIABLES_HTML = `
+<div class="variables-container">
+  <div class="live-ink-prompt">No variables to display.</div>
+</div>`;
+
 // Extend Window interface for our API
 declare global {
   interface Window {
@@ -88,6 +93,12 @@ function showEmptyState(): void {
       id: 'live-ink',
       label: 'Live Ink',
       content: LIVE_INK_HTML,
+      type: 'html'
+    },
+    {
+      id: 'variables',
+      label: 'Variables',
+      content: VARIABLES_HTML,
       type: 'html'
     }
   ]);
@@ -267,6 +278,12 @@ function setupCompileResultListener(): void {
           label: 'Live Ink',
           content: LIVE_INK_HTML,
           type: 'html'
+        },
+        {
+          id: 'variables',
+          label: 'Variables',
+          content: VARIABLES_HTML,
+          type: 'html'
         }
       ]);
 
@@ -313,6 +330,12 @@ function setupCompileResultListener(): void {
           id: 'live-ink',
           label: 'Live Ink',
           content: LIVE_INK_HTML,
+          type: 'html'
+        },
+        {
+          id: 'variables',
+          label: 'Variables',
+          content: VARIABLES_HTML,
           type: 'html'
         }
       ]);

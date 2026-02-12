@@ -2,6 +2,7 @@ TODO:
 -----
 Add variable tracking.
 Add loading/saving test sets of variables.
+Deal with long names in nodes
 
 Add stress testing.
 
