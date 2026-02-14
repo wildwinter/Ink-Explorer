@@ -4,7 +4,6 @@ Add stress testing.
 Componentise for use in Dinky.
 
 Proper icons.
-Proper documentation.
 
 DONE:
 -----
@@ -44,3 +43,4 @@ Add project path at the top
 Visits
 Test external functions
 Fix issue with shuffle code view (going into a container)
+Proper documentation.
