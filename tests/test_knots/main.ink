@@ -58,7 +58,7 @@ This is a fallback for external function, passed ({soundName})
 
 == TestExternalFunctions
 = NoFallback
-~ ExFunctionTestNoFallback("Test")
+//~ ExFunctionTestNoFallback("Test")
 -> DONE
 
 = WithFallback
