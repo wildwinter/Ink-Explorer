@@ -1,7 +1,5 @@
 TODO:
 -----
-Fix issue with shuffle code view (going into a container)
-
 Add stress testing.
 Componentise for use in Dinky.
 
@@ -45,3 +43,4 @@ Add variable tracking.
 Add project path at the top
 Visits
 Test external functions
+Fix issue with shuffle code view (going into a container)

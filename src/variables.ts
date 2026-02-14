@@ -248,7 +248,28 @@ export class VariablesController {
         if (!inkList) return;
 
         // Get all possible items from the list's origins
-        const allItems = inkList.all;
+        let allItems = inkList.all;
+
+        // If the list is empty, inkjs clears the origins, so .all is empty.
+        // Try to recover from _originNames if available.
+        if ((!allItems || allItems.Count === 0) && inkList._originNames && inkList._originNames.length > 0 && this.currentStory.listDefinitions) {
+            const originNames = inkList._originNames as string[];
+            const recoveredAll = new Map<string, number>();
+
+            for (const name of originNames) {
+                const def = this.currentStory.listDefinitions.TryListGetDefinition(name, null);
+                if (def.exists && def.result && def.result.items) {
+                    for (const [key, val] of def.result.items) {
+                        recoveredAll.set(key, val);
+                    }
+                }
+            }
+
+            if (recoveredAll.size > 0) {
+                allItems = recoveredAll;
+            }
+        }
+
         if (!allItems) return;
 
         // Collect items sorted by their numeric value
