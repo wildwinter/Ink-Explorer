@@ -451,7 +451,7 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
                 // Layout stitches using the same parent-child rule
                 const stitchHorizontalPositions = new Map<string, number>();
                 const stitchPositioned = new Set<string>();
-                const stitchVerticalSpacing = 90; // WAS 90
+                const stitchVerticalSpacing = 90;
 
                 const sortedStitchDepths = Array.from(stitchesByDepth.keys()).sort((a, b) => a - b);
 

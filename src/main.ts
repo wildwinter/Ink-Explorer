@@ -2,9 +2,12 @@ import { app, BrowserWindow, Menu, ipcMain, dialog, MenuItemConstructorOptions, 
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { execFileSync } from 'child_process';
 import { compileInk } from './ink/compiler.js';
 import { RecentFilesManager } from './utils/recentFiles.js';
+import {
+  readPref, writePref, loadWindowBounds, loadFileState, saveFileState,
+  loadThemeSetting, type ThemeSetting, type FileState
+} from './utils/preferences.js';
 import pkg from '../package.json'
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,59 +19,15 @@ let mainWindow: BrowserWindow | null;
 const recentFilesPath = path.join(app.getPath('userData'), 'recent-files.json');
 const recentFilesManager = new RecentFilesManager(recentFilesPath);
 
-// Platform-native config storage
-// macos: NSUserDefaults (~/Library/Preferences/net.wildwinter.inkexplorer.plist)
-// Windows: Registry (HKCU\Software\InkExplorer)
-// Uses execFileSync to avoid shell escaping issues
-const BUNDLE_ID = 'net.wildwinter.inkexplorer';
-const REG_KEY = 'HKCU\\Software\\InkExplorer';
 let boundsTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Source file change detection
 let currentInkFilePath: string | null = null;
-let sourceFileMtimes: Map<string, number> = new Map(); // full path → mtimeMs
+let sourceFileMtimes: Map<string, number> = new Map();
 let isRecompiling = false;
 
 // Theme management
-type ThemeSetting = 'light' | 'dark' | 'system';
 let currentThemeSetting: ThemeSetting = 'system';
-
-function readPref(key: string): string | null {
-  try {
-    if (process.platform === 'darwin') {
-      return execFileSync('defaults', ['read', BUNDLE_ID, key], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    } else if (process.platform === 'win32') {
-      const output = execFileSync('reg', ['query', REG_KEY, '/v', key], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-      const match = output.match(new RegExp(`${key}\\s+REG_SZ\\s+(.+)`));
-      return match ? match[1].trim() : null;
-    }
-  } catch { /* key not found */ }
-  return null;
-}
-
-function writePref(key: string, value: string): void {
-  try {
-    if (process.platform === 'darwin') {
-      execFileSync('defaults', ['write', BUNDLE_ID, key, '-string', value], { stdio: 'pipe' });
-    } else if (process.platform === 'win32') {
-      execFileSync('reg', ['add', REG_KEY, '/v', key, '/t', 'REG_SZ', '/d', value, '/f'], { stdio: 'pipe' });
-    }
-  } catch { /* ignore */ }
-}
-
-// Window bounds persistence
-function loadWindowBounds(): Electron.Rectangle | null {
-  const raw = readPref('windowBounds');
-  if (!raw) return null;
-  try {
-    const bounds = JSON.parse(raw);
-    if (typeof bounds.x === 'number' && typeof bounds.y === 'number' &&
-      typeof bounds.width === 'number' && typeof bounds.height === 'number') {
-      return bounds;
-    }
-  } catch { /* invalid data */ }
-  return null;
-}
 
 function saveWindowBounds(): void {
   if (!mainWindow) return;
@@ -79,45 +38,11 @@ function saveWindowBounds(): void {
   }, 500);
 }
 
-// Per-file state persistence
-interface FileState {
-  codePaneOpen: boolean;
-  graphTransform: { x: number; y: number; k: number } | null;
-  selectedNodeId: string | null;
-}
-
-function loadAllFileStates(): Record<string, FileState> {
-  const raw = readPref('fileStates');
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch { return {}; }
-}
-
-function loadFileState(filePath: string): FileState | null {
-  const all = loadAllFileStates();
-  return all[filePath] || null;
-}
-
-function saveFileState(filePath: string, state: FileState): void {
-  const all = loadAllFileStates();
-  all[filePath] = state;
-  writePref('fileStates', JSON.stringify(all));
-}
-
 function getEffectiveTheme(): 'light' | 'dark' {
   if (currentThemeSetting === 'system') {
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   }
   return currentThemeSetting;
-}
-
-function loadThemeSetting(): ThemeSetting {
-  const saved = readPref('theme');
-  if (saved === 'light' || saved === 'dark' || saved === 'system') {
-    return saved;
-  }
-  return 'system';
 }
 
 function applyTheme(): void {
@@ -130,7 +55,7 @@ function setTheme(setting: ThemeSetting): void {
   currentThemeSetting = setting;
   writePref('theme', setting);
   applyTheme();
-  createMenu(); // rebuild to update radio check marks
+  createMenu();
 }
 
 /**
@@ -155,25 +80,20 @@ function checkSourceFilesChanged(): boolean {
       const stat = fs.statSync(fp);
       if (stat.mtimeMs !== savedMtime) return true;
     } catch {
-      // File no longer exists — treat as changed
       return true;
     }
   }
   return false;
 }
 
-// Function to compile Ink file and send results to renderer
 async function compileAndLogInk(inkFilePath: string): Promise<void> {
   const result = await compileInk(inkFilePath);
 
-  // Track source files for change detection on focus
   currentInkFilePath = inkFilePath;
   if (result.sourceFilePaths) {
     storeSourceFileMtimes(result.sourceFilePaths);
   }
 
-  // Send result to renderer for logging
-  // Convert sourceFiles Map to plain object for reliable IPC serialization
   if (mainWindow) {
     const serializable = {
       ...result,
@@ -186,13 +106,10 @@ async function compileAndLogInk(inkFilePath: string): Promise<void> {
     mainWindow.webContents.send('ink-compile-result', serializable);
   }
 
-  // Add to recent files if compilation succeeded
   if (result.success) {
     recentFilesManager.add(inkFilePath);
-    // Rebuild menu to show updated recent files
     createMenu();
   } else {
-    // Show error dialog on compilation failure
     const fileName = path.basename(inkFilePath);
     const errorMessage = result.errors?.join('\n\n') || 'Unknown error';
 
@@ -206,7 +123,6 @@ async function compileAndLogInk(inkFilePath: string): Promise<void> {
   }
 }
 
-// Function to show file picker and compile Ink
 async function loadInkFile(): Promise<void> {
   const result = await dialog.showOpenDialog(mainWindow!, {
     title: 'Load Ink File',
@@ -223,17 +139,15 @@ async function loadInkFile(): Promise<void> {
   }
 }
 
-// IPC handler (kept for compatibility)
+// IPC handlers
 ipcMain.handle('compile-ink', async (_event, inkFilePath: string) => {
   return await compileInk(inkFilePath);
 });
 
-// IPC handler for saving per-file state
 ipcMain.on('save-file-state', (_event, filePath: string, state: FileState) => {
   saveFileState(filePath, state);
 });
 
-// IPC handlers for simple preferences
 ipcMain.on('save-pref', (_event, key: string, value: string) => {
   writePref(key, value);
 });
@@ -241,7 +155,6 @@ ipcMain.handle('load-pref', (_event, key: string) => {
   return readPref(key);
 });
 
-// IPC handlers for ink state file management
 ipcMain.handle('list-ink-states', (_event, inkFilePath: string) => {
   const dir = path.dirname(inkFilePath);
   try {
@@ -277,9 +190,6 @@ const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
 function createWindow(): void {
-  // Resolve preload script path correctly for dev and production
-  // In dev mode, use process.cwd() to get project root
-  // In production, use __dirname which is the dist-electron directory
   const preloadPath = isDev
     ? path.join(process.cwd(), 'dist-electron', 'preload.js')
     : path.join(__dirname, 'preload.js');
@@ -300,11 +210,10 @@ function createWindow(): void {
       preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false // Disable sandbox to ensure preload works
+      sandbox: false
     }
   });
 
-  // Save window bounds on resize and move
   mainWindow.on('resize', saveWindowBounds);
   mainWindow.on('move', saveWindowBounds);
 
@@ -315,7 +224,6 @@ function createWindow(): void {
     if (!checkSourceFilesChanged()) return;
 
     isRecompiling = true;
-    // Ask renderer to flush its current state to prefs, then recompile
     mainWindow!.webContents.send('request-save-state');
     setTimeout(async () => {
       try {
@@ -326,7 +234,6 @@ function createWindow(): void {
     }, 50);
   });
 
-  // In development, load from Vite dev server; in production, load built files
   if (isDev) {
     mainWindow.loadURL(VITE_DEV_SERVER_URL);
   } else {
@@ -341,7 +248,6 @@ function createWindow(): void {
 function createMenu(): void {
   const isMac = process.platform === 'darwin';
 
-  // Build Recent Files submenu
   const recentFiles = recentFilesManager.getAll();
   const recentFilesSubmenu: MenuItemConstructorOptions[] = recentFiles.length > 0
     ? [
@@ -367,7 +273,6 @@ function createMenu(): void {
     ];
 
   const template: MenuItemConstructorOptions[] = [
-    // App menu (macOS only)
     ...(isMac ? [{
       label: app.name,
       submenu: [
@@ -386,7 +291,6 @@ function createMenu(): void {
         }
       ]
     }] : []),
-    // File menu
     {
       label: 'File',
       submenu: [
@@ -410,7 +314,6 @@ function createMenu(): void {
         ])
       ]
     },
-    // Edit menu
     {
       label: 'Edit',
       submenu: [
@@ -431,7 +334,6 @@ function createMenu(): void {
         ])
       ]
     },
-    // View menu
     {
       label: 'View',
       submenu: [
@@ -479,7 +381,6 @@ function createMenu(): void {
         { role: 'togglefullscreen' as const }
       ]
     },
-    // Window menu
     {
       label: 'Window',
       submenu: [
@@ -502,37 +403,30 @@ function createMenu(): void {
 }
 
 app.whenReady().then(() => {
-  // Set app name for About menu (macOS)
   app.name = 'InkExplorer';
 
-  // Configure About panel (macOS)
   app.setAboutPanelOptions({
     applicationName: 'Ink Explorer',
     applicationVersion: app.getVersion(),
-    version: '', // Suppress build version (redundant)
+    version: '',
     copyright: 'Copyright © 2026 Ian Thomas',
     credits: `Powered by inkjs v${(pkg as any).inkjsVersion}`
   });
 
-  // Load recent files from disk
   recentFilesManager.load();
-
-  // Load saved theme preference
   currentThemeSetting = loadThemeSetting();
 
   createMenu();
   createWindow();
 
-  // React to OS theme changes (relevant when setting is 'system')
   nativeTheme.on('updated', () => {
     if (currentThemeSetting === 'system') {
       applyTheme();
     }
   });
 
-  // Auto-load most recent file after window is ready
   mainWindow!.webContents.once('did-finish-load', () => {
-    applyTheme(); // send initial theme to renderer
+    applyTheme();
 
     const mostRecentFile = recentFilesManager.getMostRecent();
     if (mostRecentFile && fs.existsSync(mostRecentFile)) {

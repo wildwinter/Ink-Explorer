@@ -109,7 +109,6 @@ export class LiveInkController {
 
     public setStoryJson(json: string | object | null) {
         this.currentStoryJson = json;
-        // Reset state when story changes?
         this.currentStartNode = null;
     }
 
@@ -139,9 +138,7 @@ export class LiveInkController {
                 this.centreOnCurrentNode();
             }
         });
-
     }
-
 
     public init() {
         const followCheckbox = document.getElementById('live-ink-follow') as HTMLInputElement | null;
@@ -224,7 +221,6 @@ export class LiveInkController {
         this.updateButtons();
         if (this.graphController) this.graphController.highlightCurrentNode(null);
 
-        // Using global document approach as in original, but could scopes this
         const statusEl = document.getElementById('live-ink-status');
         if (statusEl) {
             statusEl.textContent = startPath ? `Testing: ${startPath}` : 'Testing from start';
@@ -335,10 +331,6 @@ export class LiveInkController {
                 const newVal = this.liveInkStory.state.VisitCountAtPathString(nodePath) || 0;
                 if (newVal > oldVal) {
                     currentVisitCounts.set(nodePath, newVal);
-                    // If we found a visit change, this is likely the active node for this text
-                    // We prefer longer paths (stitches) over shorter ones (knots) if multiple changed, 
-                    // but usually the runtime handles this hierarchy.
-                    // Let's just set it.
                     const parsed = this.pathToNodeId(nodePath);
                     if (parsed) {
                         this.liveInkCurrentNodeId = parsed;
@@ -401,9 +393,7 @@ export class LiveInkController {
             }
         }
 
-
-
-        // 1. Fade all existing visited nodes
+        // Fade all existing visited nodes
         for (const [id, opacity] of this.liveInkVisitedNodes) {
             const next = opacity - 0.10;
             if (next <= 0) {
@@ -413,23 +403,19 @@ export class LiveInkController {
             }
         }
 
-        // 2. Add intermediate nodes to the visited set (resetting opacity)
         for (const id of seenNodeIds) {
             if (id !== this.liveInkCurrentNodeId) {
                 this.liveInkVisitedNodes.set(id, 0.75);
             }
         }
 
-        // 3. Handle Current -> Previous transition
         if (this.liveInkCurrentNodeId !== this.liveInkPreviousNodeId) {
-            // Previous current node becomes visited at 75%
             if (this.liveInkPreviousNodeId) {
                 this.liveInkVisitedNodes.set(this.liveInkPreviousNodeId, 0.75);
             }
             this.liveInkPreviousNodeId = this.liveInkCurrentNodeId;
         }
 
-        // 4. Current node shouldn't appear in the visited set
         if (this.liveInkCurrentNodeId) {
             this.liveInkVisitedNodes.delete(this.liveInkCurrentNodeId);
         }
@@ -445,7 +431,6 @@ export class LiveInkController {
         });
         this.updateButtons();
         this.updateCurrentNodeHighlight();
-
 
         if (this.liveInkStory.currentChoices.length > 0) {
             this.renderChoices();

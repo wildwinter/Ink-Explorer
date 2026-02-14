@@ -98,7 +98,7 @@ export class VisitsController {
         let table = wrapper.querySelector('table.visits-table') as HTMLTableElement | null;
         if (!table) {
             table = document.createElement('table');
-            table.className = 'visits-table'; // Use same class or similar to variables-table for styling
+            table.className = 'visits-table';
 
             const thead = document.createElement('thead');
             thead.innerHTML = '<tr><th class="visit-col-path">Path</th><th class="visit-col-count">Count</th></tr>';

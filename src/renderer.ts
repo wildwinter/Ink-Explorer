@@ -3,7 +3,7 @@
 import type { CompilationResult } from './ink/compiler.js';
 import { createGraphVisualization } from './graphVisualizer.js';
 import type { GraphController, NodeType } from './graphVisualizer.js';
-import { UIManager } from './uiManager.js';
+import { UIManager, type Tab } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
 import { VariablesController, VARIABLES_HTML } from './variables.js';
 import { VisitsController, VISITS_HTML } from './visits.js';
@@ -30,6 +30,13 @@ declare global {
     };
   }
 }
+
+const DEFAULT_TABS: Tab[] = [
+  { id: 'live-ink', label: 'Live Ink', content: LIVE_INK_HTML, type: 'html' },
+  { id: 'variables', label: 'Variables', content: VARIABLES_HTML, type: 'html' },
+  { id: 'visits', label: 'Visits', content: VISITS_HTML, type: 'html' },
+  { id: 'states', label: 'States', content: STATES_HTML, type: 'html' }
+];
 
 // Module-level state
 let currentSourceFiles: Map<string, string> | null = null;
@@ -74,9 +81,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.api.onRequestSaveState(() => saveCurrentFileState());
     window.api.onThemeChanged((theme) => {
       uiManager.applyTheme(theme);
-      // Force graph to re-read CSS variables
       if (currentGraphController) {
-        // slight delay to ensure style recalc? usually not needed but safe
         requestAnimationFrame(() => currentGraphController?.updateColors());
       }
     });
@@ -95,34 +100,7 @@ function showEmptyState(): void {
     structureOutput.innerHTML = '<div class="empty-message">Load an Ink file to view its structure</div>';
   }
 
-  // Show empty state in tabs
-  uiManager.createTabs([
-    {
-      id: 'live-ink',
-      label: 'Live Ink',
-      content: LIVE_INK_HTML,
-      type: 'html'
-    },
-    {
-      id: 'variables',
-      label: 'Variables',
-      content: VARIABLES_HTML,
-      type: 'html'
-
-    },
-    {
-      id: 'visits',
-      label: 'Visits',
-      content: VISITS_HTML,
-      type: 'html'
-    },
-    {
-      id: 'states',
-      label: 'States',
-      content: STATES_HTML,
-      type: 'html'
-    }
-  ]);
+  uiManager.createTabs(DEFAULT_TABS);
 
   // Connect Live Ink controller to the output container directly after creation
   const output = document.getElementById('live-ink-output');
@@ -309,33 +287,7 @@ function setupCompileResultListener(): void {
       liveInkController.setStoryNodePaths(storyNodePaths);
       visitsController.setNodePaths(storyNodePaths);
 
-      // Create tabs
-      uiManager.createTabs([
-        {
-          id: 'live-ink',
-          label: 'Live Ink',
-          content: LIVE_INK_HTML,
-          type: 'html'
-        },
-        {
-          id: 'variables',
-          label: 'Variables',
-          content: VARIABLES_HTML,
-          type: 'html'
-        },
-        {
-          id: 'visits',
-          label: 'Visits',
-          content: VISITS_HTML,
-          type: 'html'
-        },
-        {
-          id: 'states',
-          label: 'States',
-          content: STATES_HTML,
-          type: 'html'
-        }
-      ]);
+      uiManager.createTabs(DEFAULT_TABS);
 
       // Re-connect output container as tabs were recreated
       const output = document.getElementById('live-ink-output');
@@ -411,32 +363,7 @@ function setupCompileResultListener(): void {
       // Show error state
       structureOutput.innerHTML = '<div class="empty-message">Compilation failed</div>';
 
-      uiManager.createTabs([
-        {
-          id: 'live-ink',
-          label: 'Live Ink',
-          content: LIVE_INK_HTML,
-          type: 'html'
-        },
-        {
-          id: 'variables',
-          label: 'Variables',
-          content: VARIABLES_HTML,
-          type: 'html'
-        },
-        {
-          id: 'visits',
-          label: 'Visits',
-          content: VISITS_HTML,
-          type: 'html'
-        },
-        {
-          id: 'states',
-          label: 'States',
-          content: STATES_HTML,
-          type: 'html'
-        }
-      ]);
+      uiManager.createTabs(DEFAULT_TABS);
 
       const output = document.getElementById('live-ink-output');
       if (output) {

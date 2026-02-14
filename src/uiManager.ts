@@ -78,43 +78,16 @@ export class UIManager {
      * Switches to a specific tab
      */
     public switchTab(tabId: string) {
-        // Update button states
         const buttons = document.querySelectorAll('.tab-button');
-        buttons.forEach((button, index) => {
-            const content = document.querySelectorAll('.tab-content')[index];
-            if (!content) return;
-
-            const contentId = content.id.replace('tab-', '');
-
-            if (button.textContent === tabId || contentId === tabId) { // simplified check logic
-                button.classList.add('active');
-                content.classList.add('active');
-            } else {
-                button.classList.remove('active');
-                content.classList.remove('active');
-            }
-        });
-
-        // Also explicitly match by ID if previous loop didn't catch it correctly (robustness)
         const contents = document.querySelectorAll('.tab-content');
-        contents.forEach(content => {
-            if (content.id === `tab-${tabId}`) {
-                content.classList.add('active');
-                // Find corresponding button
-                // This implies strict ordering, which createTabs enforces.
-            } else {
-                content.classList.remove('active');
-            }
-        });
 
-        // Fix button active state based on content active state
         buttons.forEach((button, index) => {
             const content = contents[index];
-            if (content && content.classList.contains('active')) {
-                button.classList.add('active');
-            } else {
-                button.classList.remove('active');
-            }
+            if (!content) return;
+
+            const isActive = content.id === `tab-${tabId}`;
+            button.classList.toggle('active', isActive);
+            content.classList.toggle('active', isActive);
         });
     }
 
