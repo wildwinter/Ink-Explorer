@@ -13,20 +13,20 @@ const dinkyRegex = /^(\s*)([A-Z0-9_]+)(\s*)(\(.*?\)|)(\s*)(:)(\s*)(\(.*?\)|)(\s*
 export const LIVE_INK_HTML = `
 <div class="live-ink-container">
   <div class="live-ink-toolbar">
-    <div class="live-ink-btn" id="live-ink-test" title="Test from selected node">
+    <div class="live-ink-btn" id="live-ink-test" data-tooltip="Test from selected node">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="6 3 20 12 6 21 6 3"/>
       </svg>
     </div>
-    <div class="live-ink-btn" id="live-ink-restart" title="Restart">
+    <div class="live-ink-btn" id="live-ink-restart" data-tooltip="Restart">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="19 20 9 12 19 4 19 20"/>
-        <line x1="5" y1="19" x2="5" y2="5"/>
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
       </svg>
     </div>
-    <div class="live-ink-btn disabled" id="live-ink-back" title="Step Back">
+    <div class="live-ink-btn disabled" id="live-ink-back" data-tooltip="Step Back">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9 14 4 9l5-5"/>
@@ -34,14 +34,14 @@ export const LIVE_INK_HTML = `
       </svg>
     </div>
     <div class="live-ink-separator"></div>
-    <div class="live-ink-btn" id="live-ink-centre" title="Centre graph on current node">
+    <div class="live-ink-btn" id="live-ink-centre" data-tooltip="Centre graph on current node">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
         <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
       </svg>
     </div>
-    <label class="live-ink-follow" title="Automatically centre graph when the active node changes">
+    <label class="live-ink-follow" data-tooltip="Automatically centre graph when the active node changes">
       <input type="checkbox" id="live-ink-follow"/>
       <span>Follow</span>
     </label>
@@ -140,11 +140,8 @@ export class LiveInkController {
             }
         });
 
-        // Delegation for follow checkbox change would be tricky since it might not exist yet
-        // Can just attach when initializing or using a mutation observer, 
-        // but renderer.ts called initLiveInk() after creating tabs.
-        // We can expose an init method.
     }
+
 
     public init() {
         const followCheckbox = document.getElementById('live-ink-follow') as HTMLInputElement | null;

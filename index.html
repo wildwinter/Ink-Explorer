@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,20 +8,20 @@
   <title>Ink Explorer</title>
   <link rel="stylesheet" href="/src/style.css">
 </head>
+
 <body>
   <div class="container">
     <div class="pane left-pane">
-      <h2>Story Structure</h2>
       <div id="structure-output"></div>
       <div id="code-pane" class="code-pane">
         <div class="code-pane-header">
           <span id="code-pane-title">Ink Source</span>
           <div class="code-pane-header-controls">
-            <label class="code-pane-follow" title="Automatically show code for the current Live Ink node">
-              <input type="checkbox" id="code-view-follow"/>
+            <label class="code-pane-follow" data-tooltip="Automatically show code for the current Live Ink node">
+              <input type="checkbox" id="code-view-follow" />
               <span>Follow</span>
             </label>
-            <button id="code-pane-close" class="code-pane-close">&times;</button>
+            <button id="code-pane-close" class="code-pane-close" data-tooltip="Close">&times;</button>
           </div>
         </div>
         <div class="code-pane-content">
@@ -41,4 +42,5 @@
   </div>
   <script type="module" src="/src/renderer.ts"></script>
 </body>
+
 </html>

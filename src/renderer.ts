@@ -10,6 +10,7 @@ import { VisitsController, VISITS_HTML } from './visits.js';
 import { StatesController, STATES_HTML } from './states.js';
 import { setStatusFile } from './statusBar.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
+import { TooltipManager } from './tooltipManager.js';
 
 // Extend Window interface for our API
 declare global {
@@ -45,6 +46,7 @@ const statesController = new StatesController();
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Ink Explorer loaded - use File > Load Ink... to examine an Ink file');
+  TooltipManager.init();
   showEmptyState();
 
   // Suppress Electron's native context menu (we use our own on graph nodes)

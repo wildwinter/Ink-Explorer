@@ -10,7 +10,7 @@ export const STATES_HTML = `
 <div class="states-container">
   <div class="states-toolbar">
     <input type="text" class="states-name-input" id="states-name-input" placeholder="State name..." />
-    <div class="live-ink-btn" id="states-save-btn" title="Save current state">
+    <div class="live-ink-btn" id="states-save-btn" data-tooltip="Save current state">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -261,6 +261,7 @@ export class StatesController {
             // Auto-load checkbox
             const autoloadLabel = document.createElement('label');
             autoloadLabel.className = 'states-autoload-label';
+            autoloadLabel.setAttribute('data-tooltip', 'Load this state automatically when testing starts');
             const autoloadCheckbox = document.createElement('input');
             autoloadCheckbox.type = 'checkbox';
             autoloadCheckbox.className = 'states-autoload-checkbox';
@@ -276,6 +277,7 @@ export class StatesController {
             const loadBtn = document.createElement('div');
             loadBtn.className = 'states-text-btn states-load-btn' + (this.currentStory ? '' : ' disabled');
             loadBtn.dataset.name = name;
+            loadBtn.setAttribute('data-tooltip', `Load state '${name}'`);
             loadBtn.textContent = 'Load';
             actions.appendChild(loadBtn);
 
@@ -283,6 +285,7 @@ export class StatesController {
             const overwriteBtn = document.createElement('div');
             overwriteBtn.className = 'states-text-btn states-overwrite-btn' + (this.currentStory ? '' : ' disabled');
             overwriteBtn.dataset.name = name;
+            overwriteBtn.setAttribute('data-tooltip', `Overwrite state '${name}'`);
             overwriteBtn.textContent = 'Overwrite';
             actions.appendChild(overwriteBtn);
 
@@ -290,6 +293,7 @@ export class StatesController {
             const deleteBtn = document.createElement('div');
             deleteBtn.className = 'states-text-btn states-delete-btn';
             deleteBtn.dataset.name = name;
+            deleteBtn.setAttribute('data-tooltip', `Delete state '${name}'`);
             deleteBtn.textContent = 'Delete';
             actions.appendChild(deleteBtn);
 
