@@ -6,6 +6,7 @@ import type { GraphController, NodeType } from './graphVisualizer.js';
 import { UIManager } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
 import { VariablesController, VARIABLES_HTML } from './variables.js';
+import { VisitsController, VISITS_HTML } from './visits.js';
 import { StatesController, STATES_HTML } from './states.js';
 import { setStatusFile } from './statusBar.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
@@ -39,6 +40,7 @@ let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 const uiManager = new UIManager();
 const liveInkController = new LiveInkController();
 const variablesController = new VariablesController();
+const visitsController = new VisitsController();
 const statesController = new StatesController();
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -104,6 +106,13 @@ function showEmptyState(): void {
       label: 'Variables',
       content: VARIABLES_HTML,
       type: 'html'
+
+    },
+    {
+      id: 'visits',
+      label: 'Visits',
+      content: VISITS_HTML,
+      type: 'html'
     },
     {
       id: 'states',
@@ -121,6 +130,9 @@ function showEmptyState(): void {
 
   // Connect Variables controller
   variablesController.init();
+
+  // Connect Visits controller
+  visitsController.init();
 
   // Connect States controller
   statesController.init();
@@ -287,7 +299,7 @@ function setupCompileResultListener(): void {
         }
       }
       liveInkController.setStoryNodePaths(storyNodePaths);
-
+      visitsController.setNodePaths(storyNodePaths);
 
       // Create tabs
       uiManager.createTabs([
@@ -301,6 +313,12 @@ function setupCompileResultListener(): void {
           id: 'variables',
           label: 'Variables',
           content: VARIABLES_HTML,
+          type: 'html'
+        },
+        {
+          id: 'visits',
+          label: 'Visits',
+          content: VISITS_HTML,
           type: 'html'
         },
         {
@@ -321,6 +339,9 @@ function setupCompileResultListener(): void {
       // Re-connect Variables controller
       variablesController.init();
 
+      // Re-connect Visits controller
+      visitsController.init();
+
       // Re-connect States controller
       statesController.init();
       statesController.setInkFilePath(currentFilePath);
@@ -329,9 +350,11 @@ function setupCompileResultListener(): void {
       liveInkController.setOnStoryStateChange((story) => {
         if (story) {
           variablesController.updateFromStory(story);
+          visitsController.updateFromStory(story);
           statesController.setStory(story);
         } else {
           variablesController.clear();
+          visitsController.clear();
           statesController.setStory(null);
         }
       });
@@ -339,6 +362,7 @@ function setupCompileResultListener(): void {
       // When a state is loaded from the States tab, update the variables panel
       statesController.setOnStateLoaded((story) => {
         variablesController.updateFromStory(story);
+        visitsController.updateFromStory(story);
       });
 
       // Wire auto-load state into test starts
@@ -393,6 +417,12 @@ function setupCompileResultListener(): void {
           type: 'html'
         },
         {
+          id: 'visits',
+          label: 'Visits',
+          content: VISITS_HTML,
+          type: 'html'
+        },
+        {
           id: 'states',
           label: 'States',
           content: STATES_HTML,
@@ -409,6 +439,10 @@ function setupCompileResultListener(): void {
       // Re-connect Variables controller and clear
       variablesController.init();
       variablesController.clear();
+
+      // Re-connect Visits controller and clear
+      visitsController.init();
+      visitsController.clear();
 
       // Re-connect States controller and clear
       statesController.init();

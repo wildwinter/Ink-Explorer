@@ -700,9 +700,19 @@ body {
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-4px);
+  }
+
+  75% {
+    transform: translateX(4px);
+  }
 }
 
 .states-toolbar .live-ink-btn {
@@ -874,6 +884,100 @@ body {
   margin-left: 16px;
 }
 
-.status-bar-message.visible {
-  opacity: 1;
+
+/* Visits tab */
+.visits-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-content:has(.visits-container) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.visits-search-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.visits-search {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.visits-search:focus {
+  border-color: var(--accent-blue);
+}
+
+.visits-search::placeholder {
+  color: var(--text-muted);
+}
+
+.visits-table-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.visits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.visits-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  z-index: 1;
+}
+
+.visits-table tbody td {
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  vertical-align: middle;
+}
+
+.visit-path {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.visit-count {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  color: var(--text-bright);
+  text-align: right;
+  width: 80px;
+}
+
+
+.visit-col-path {
+  width: 70%;
+}
+
+/* Use higher specificity to override default th alignment */
+.visits-table thead th.visit-col-count,
+.visit-col-count {
+  width: 30%;
+  text-align: right;
 }
