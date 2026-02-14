@@ -4,6 +4,7 @@
  */
 
 import type { Story } from 'inkjs';
+import { showStatus } from './statusBar.js';
 
 export const STATES_HTML = `
 <div class="states-container">
@@ -44,6 +45,7 @@ export class StatesController {
     public setStory(story: InstanceType<typeof Story> | null) {
         this.currentStory = story;
         this.updateSaveButtonState();
+        this.renderList();
     }
 
     public async setInkFilePath(filePath: string | null) {
@@ -104,6 +106,14 @@ export class StatesController {
                 return;
             }
 
+            const overwriteBtn = target.closest('.states-overwrite-btn') as HTMLElement | null;
+            if (overwriteBtn) {
+                e.preventDefault();
+                const name = overwriteBtn.dataset.name;
+                if (name) this.handleOverwrite(name);
+                return;
+            }
+
             const deleteBtn = target.closest('.states-delete-btn') as HTMLElement | null;
             if (deleteBtn) {
                 e.preventDefault();
@@ -112,10 +122,9 @@ export class StatesController {
                 return;
             }
 
-            const autoloadBtn = target.closest('.states-autoload-btn') as HTMLElement | null;
-            if (autoloadBtn) {
-                e.preventDefault();
-                const name = autoloadBtn.dataset.name;
+            const autoloadCheckbox = target.closest('.states-autoload-checkbox') as HTMLInputElement | null;
+            if (autoloadCheckbox) {
+                const name = autoloadCheckbox.dataset.name;
                 if (name) this.handleToggleAutoLoad(name);
                 return;
             }
@@ -147,8 +156,21 @@ export class StatesController {
             await window.api.saveInkState(this.inkFilePath, name, stateJson);
             input.value = '';
             await this.refreshList();
+            showStatus(`State saved: ${name}`);
         } catch (e) {
             console.error('Failed to save state:', e);
+        }
+    }
+
+    private async handleOverwrite(name: string) {
+        if (!this.currentStory || !this.inkFilePath) return;
+
+        try {
+            const stateJson = this.currentStory.state.toJson();
+            await window.api.saveInkState(this.inkFilePath, name, stateJson);
+            showStatus(`State overwritten: ${name}`);
+        } catch (e) {
+            console.error('Failed to overwrite state:', e);
         }
     }
 
@@ -159,6 +181,7 @@ export class StatesController {
             const stateJson = await window.api.loadInkState(this.inkFilePath, name);
             this.currentStory.state.LoadJson(stateJson);
             if (this.onStateLoaded) this.onStateLoaded(this.currentStory);
+            showStatus(`State loaded: ${name}`);
         } catch (e) {
             console.error('Failed to load state:', e);
         }
@@ -235,40 +258,39 @@ export class StatesController {
             const actions = document.createElement('div');
             actions.className = 'states-item-actions';
 
-            // Auto-load toggle button
-            const autoloadBtn = document.createElement('div');
-            autoloadBtn.className = 'states-action-btn states-autoload-btn' + (isAutoLoad ? ' active' : '');
-            autoloadBtn.dataset.name = name;
-            autoloadBtn.title = isAutoLoad ? 'Remove auto-load on test start' : 'Auto-load on test start';
-            autoloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${isAutoLoad ? 'currentColor' : 'none'}"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>`;
-            actions.appendChild(autoloadBtn);
+            // Auto-load checkbox
+            const autoloadLabel = document.createElement('label');
+            autoloadLabel.className = 'states-autoload-label';
+            const autoloadCheckbox = document.createElement('input');
+            autoloadCheckbox.type = 'checkbox';
+            autoloadCheckbox.className = 'states-autoload-checkbox';
+            autoloadCheckbox.checked = isAutoLoad;
+            autoloadCheckbox.dataset.name = name;
+            const autoloadText = document.createElement('span');
+            autoloadText.textContent = 'Load on Test';
+            autoloadLabel.appendChild(autoloadCheckbox);
+            autoloadLabel.appendChild(autoloadText);
+            actions.appendChild(autoloadLabel);
 
             // Load button
             const loadBtn = document.createElement('div');
-            loadBtn.className = 'states-action-btn states-load-btn';
+            loadBtn.className = 'states-text-btn states-load-btn' + (this.currentStory ? '' : ' disabled');
             loadBtn.dataset.name = name;
-            loadBtn.title = 'Load this state';
-            loadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>`;
+            loadBtn.textContent = 'Load';
             actions.appendChild(loadBtn);
+
+            // Overwrite button
+            const overwriteBtn = document.createElement('div');
+            overwriteBtn.className = 'states-text-btn states-overwrite-btn' + (this.currentStory ? '' : ' disabled');
+            overwriteBtn.dataset.name = name;
+            overwriteBtn.textContent = 'Overwrite';
+            actions.appendChild(overwriteBtn);
 
             // Delete button
             const deleteBtn = document.createElement('div');
-            deleteBtn.className = 'states-action-btn states-delete-btn';
+            deleteBtn.className = 'states-text-btn states-delete-btn';
             deleteBtn.dataset.name = name;
-            deleteBtn.title = 'Delete this state';
-            deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-            </svg>`;
+            deleteBtn.textContent = 'Delete';
             actions.appendChild(deleteBtn);
 
             item.appendChild(actions);

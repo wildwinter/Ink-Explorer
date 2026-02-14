@@ -97,12 +97,15 @@ body {
   overflow: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
 }
 
 .container {
   display: flex;
-  height: 100vh;
+  flex: 1;
   width: 100vw;
+  min-height: 0;
 }
 
 .pane {
@@ -746,28 +749,50 @@ body {
 
 .states-item-actions {
   display: flex;
-  gap: 2px;
+  gap: 6px;
   flex-shrink: 0;
+  align-items: center;
 }
 
-.states-action-btn {
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
+.states-autoload-label {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 4px;
+  gap: 3px;
+  font-size: 11px;
   color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
 }
 
-.states-action-btn:hover {
+.states-autoload-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.states-text-btn {
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.states-text-btn:hover {
   background: var(--bg-secondary);
   color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
-.states-autoload-btn.active {
-  color: var(--accent-blue);
+.states-text-btn:active {
+  background: var(--border-primary);
+}
+
+.states-text-btn.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
 }
 
 .states-delete-btn:hover {
@@ -816,4 +841,39 @@ body {
 
 .dinky-text {
   color: var(--syn-dink-text);
+}
+
+/* Status bar */
+.status-bar {
+  height: 22px;
+  line-height: 22px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.status-bar-file {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-bar-message {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+  margin-left: 16px;
+}
+
+.status-bar-message.visible {
+  opacity: 1;
 }

@@ -5,6 +5,7 @@
 
 import { Story } from 'inkjs';
 import type { GraphController } from './graphVisualizer.js';
+import { showStatus } from './statusBar.js';
 
 // Regex for parsing Dinky tags
 const dinkyRegex = /^(\s*)([A-Z0-9_]+)(\s*)(\(.*?\)|)(\s*)(:)(\s*)(\(.*?\)|)(\s*)((?:[^/#]|\/(?![/*]))*)/;
@@ -269,6 +270,7 @@ export class LiveInkController {
             if (this.initialStateJson) {
                 try {
                     this.mergeStateIntoStory(this.liveInkStory, this.initialStateJson);
+                    showStatus('Auto-loaded state on test start');
                 } catch (e) {
                     const p = document.createElement('p');
                     p.style.color = 'orange';

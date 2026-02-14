@@ -1,10 +1,8 @@
 TODO:
 -----
 
-Button icon names
-Add variable tracking.
+Visits
 
-Add project path at the top
 Test external functions
 Fix issue with shuffle code view (going into a container)
 
@@ -46,3 +44,6 @@ Fix up About...
 Deal with long names in nodes
 Enter when submitting a stack name
 Add loading/saving test sets of variables.
+Button icon names
+Add variable tracking.
+Add project path at the top

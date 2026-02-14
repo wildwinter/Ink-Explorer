@@ -7,6 +7,7 @@ import { UIManager } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
 import { VariablesController, VARIABLES_HTML } from './variables.js';
 import { StatesController, STATES_HTML } from './states.js';
+import { setStatusFile } from './statusBar.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
 
 // Extend Window interface for our API
@@ -238,6 +239,7 @@ function setupCompileResultListener(): void {
       // Extract per-file state sent from main process
       const ipcResult = result as any;
       currentFilePath = ipcResult.filePath || null;
+      setStatusFile(currentFilePath);
       const savedState = ipcResult.savedFileState as { codePaneOpen: boolean; graphTransform: { x: number; y: number; k: number } | null; selectedNodeId: string | null } | null;
 
       // Restore code pane visibility
@@ -367,6 +369,7 @@ function setupCompileResultListener(): void {
       currentSourceFiles = null;
       currentFilePath = null;
       currentGraphController = null;
+      setStatusFile(null);
 
       liveInkController.setStoryJson(null);
       liveInkController.setGraphController(null);
