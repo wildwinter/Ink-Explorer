@@ -75,6 +75,8 @@ export class LiveInkController {
     private outputContainer: HTMLElement | null = null;
     private onCurrentNodeChange: ((nodeId: string) => void) | null = null;
     private onStoryStateChange: ((story: InstanceType<typeof Story> | null) => void) | null = null;
+    private onBeforeTestStart: (() => Promise<void>) | null = null;
+    private initialStateJson: string | null = null;
 
     constructor() {
         this.setupEventListeners();
@@ -96,6 +98,10 @@ export class LiveInkController {
         this.onStoryStateChange = callback;
     }
 
+    public setOnBeforeTestStart(callback: (() => Promise<void>) | null) {
+        this.onBeforeTestStart = callback;
+    }
+
     public getCurrentNodeId(): string | null {
         return this.liveInkCurrentNodeId;
     }
@@ -110,6 +116,10 @@ export class LiveInkController {
         this.outputContainer = element;
     }
 
+    public setInitialState(stateJson: string | null) {
+        this.initialStateJson = stateJson;
+    }
+
     private setupEventListeners() {
         // Only wire up if elements exist (they might be created later)
         document.addEventListener('click', (e) => {
@@ -119,7 +129,7 @@ export class LiveInkController {
                 this.handleTestClick();
             } else if (target.closest('#live-ink-restart')) {
                 e.preventDefault();
-                if (this.currentStoryJson) this.startLiveInk(this.currentStoryJson, this.currentStartNode);
+                if (this.currentStoryJson) this.handleRestart();
             } else if (target.closest('#live-ink-back')) {
                 e.preventDefault();
                 this.goBack();
@@ -159,7 +169,7 @@ export class LiveInkController {
         }
     }
 
-    private handleTestClick() {
+    private async handleTestClick() {
         if (!this.currentStoryJson) return;
         // Use the currently selected graph node as the starting point
         const selectedId = this.graphController?.getSelectedNodeId();
@@ -175,13 +185,21 @@ export class LiveInkController {
             }
         } else {
             // No node selected — start from beginning
+            if (this.onBeforeTestStart) await this.onBeforeTestStart();
             this.currentStartNode = null;
             this.startLiveInk(this.currentStoryJson, null);
         }
     }
 
-    public startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch' | 'root', knotName?: string) {
+    private async handleRestart() {
         if (!this.currentStoryJson) return;
+        if (this.onBeforeTestStart) await this.onBeforeTestStart();
+        this.startLiveInk(this.currentStoryJson, this.currentStartNode);
+    }
+
+    public async startTestFromNode(nodeId: string, nodeType: 'knot' | 'stitch' | 'root', knotName?: string) {
+        if (!this.currentStoryJson) return;
+        if (this.onBeforeTestStart) await this.onBeforeTestStart();
         this.currentStartNode = this.nodeIdToPath(nodeId, nodeType, knotName);
 
         // We assume the caller handles tab switching if needed
@@ -243,6 +261,21 @@ export class LiveInkController {
                 // Starting from the beginning — set root as the initial node
                 // so it gets tracked as visited when the story advances
                 this.liveInkCurrentNodeId = '__root__';
+            }
+
+            // Apply initial state if set (e.g. auto-load on test start).
+            // We merge saved variables and visit counts into the story AFTER
+            // positioning, so the callstack/pointer remain clean.
+            if (this.initialStateJson) {
+                try {
+                    this.mergeStateIntoStory(this.liveInkStory, this.initialStateJson);
+                } catch (e) {
+                    const p = document.createElement('p');
+                    p.style.color = 'orange';
+                    p.textContent = 'Warning: Could not load initial state. Starting fresh.';
+                    this.outputContainer.appendChild(p);
+                }
+                this.initialStateJson = null;
             }
 
             this.continueLiveInk();
@@ -535,6 +568,32 @@ export class LiveInkController {
         const parts = pathStr.split('.').filter(p => /^[A-Za-z_]/.test(p) && /^[A-Za-z0-9_]+$/.test(p));
         if (parts.length === 0) return null;
         return parts.join('.');
+    }
+
+    /**
+     * Merges variables and visit counts from a saved state JSON into the
+     * target story without altering its callstack or position.
+     *
+     * Works by serialising the story's current (correctly positioned) state,
+     * swapping in the variable and visit-count data from the saved state,
+     * then reloading the merged result.
+     */
+    private mergeStateIntoStory(story: InstanceType<typeof Story>, savedStateJson: string) {
+        const currentStateObj = JSON.parse(story.state.toJson());
+        const savedStateObj = JSON.parse(savedStateJson);
+
+        // Overwrite variables and visit/turn tracking from the saved state
+        if (savedStateObj.variablesState) {
+            currentStateObj.variablesState = savedStateObj.variablesState;
+        }
+        if (savedStateObj.visitCounts) {
+            currentStateObj.visitCounts = savedStateObj.visitCounts;
+        }
+        if (savedStateObj.turnIndices) {
+            currentStateObj.turnIndices = savedStateObj.turnIndices;
+        }
+
+        story.state.LoadJson(JSON.stringify(currentStateObj));
     }
 
     private escapeHtml(text: string): string {

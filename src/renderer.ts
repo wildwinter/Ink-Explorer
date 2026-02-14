@@ -6,6 +6,7 @@ import type { GraphController, NodeType } from './graphVisualizer.js';
 import { UIManager } from './uiManager.js';
 import { LiveInkController, LIVE_INK_HTML } from './liveInk.js';
 import { VariablesController, VARIABLES_HTML } from './variables.js';
+import { StatesController, STATES_HTML } from './states.js';
 import { extractKnotSource, extractStitchSource, extractRootSource } from './ink/sourceManager.js';
 
 // Extend Window interface for our API
@@ -19,6 +20,10 @@ declare global {
       onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => void;
       savePref: (key: string, value: string) => void;
       loadPref: (key: string) => Promise<string | null>;
+      listInkStates: (inkFilePath: string) => Promise<string[]>;
+      saveInkState: (inkFilePath: string, name: string, json: string) => Promise<void>;
+      loadInkState: (inkFilePath: string, name: string) => Promise<string>;
+      deleteInkState: (inkFilePath: string, name: string) => Promise<void>;
     };
   }
 }
@@ -33,6 +38,7 @@ let transformSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 const uiManager = new UIManager();
 const liveInkController = new LiveInkController();
 const variablesController = new VariablesController();
+const statesController = new StatesController();
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Ink Explorer loaded - use File > Load Ink... to examine an Ink file');
@@ -97,6 +103,12 @@ function showEmptyState(): void {
       label: 'Variables',
       content: VARIABLES_HTML,
       type: 'html'
+    },
+    {
+      id: 'states',
+      label: 'States',
+      content: STATES_HTML,
+      type: 'html'
     }
   ]);
 
@@ -108,6 +120,10 @@ function showEmptyState(): void {
 
   // Connect Variables controller
   variablesController.init();
+
+  // Connect States controller
+  statesController.init();
+  statesController.setupEventListeners();
 }
 
 /**
@@ -284,6 +300,12 @@ function setupCompileResultListener(): void {
           label: 'Variables',
           content: VARIABLES_HTML,
           type: 'html'
+        },
+        {
+          id: 'states',
+          label: 'States',
+          content: STATES_HTML,
+          type: 'html'
         }
       ]);
 
@@ -297,13 +319,30 @@ function setupCompileResultListener(): void {
       // Re-connect Variables controller
       variablesController.init();
 
-      // Wire story state changes to variables panel
+      // Re-connect States controller
+      statesController.init();
+      statesController.setInkFilePath(currentFilePath);
+
+      // Wire story state changes to variables panel and states panel
       liveInkController.setOnStoryStateChange((story) => {
         if (story) {
           variablesController.updateFromStory(story);
+          statesController.setStory(story);
         } else {
           variablesController.clear();
+          statesController.setStory(null);
         }
+      });
+
+      // When a state is loaded from the States tab, update the variables panel
+      statesController.setOnStateLoaded((story) => {
+        variablesController.updateFromStory(story);
+      });
+
+      // Wire auto-load state into test starts
+      liveInkController.setOnBeforeTestStart(async () => {
+        const autoLoadJson = await statesController.getAutoLoadStateJson();
+        liveInkController.setInitialState(autoLoadJson);
       });
 
       // Wire code view follow: update code pane when live ink node changes
@@ -349,6 +388,12 @@ function setupCompileResultListener(): void {
           label: 'Variables',
           content: VARIABLES_HTML,
           type: 'html'
+        },
+        {
+          id: 'states',
+          label: 'States',
+          content: STATES_HTML,
+          type: 'html'
         }
       ]);
 
@@ -361,6 +406,10 @@ function setupCompileResultListener(): void {
       // Re-connect Variables controller and clear
       variablesController.init();
       variablesController.clear();
+
+      // Re-connect States controller and clear
+      statesController.init();
+      statesController.clear();
     }
 
     console.log('\n===============================\n');

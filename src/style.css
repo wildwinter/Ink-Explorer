@@ -651,6 +651,129 @@ body {
   padding: 40px;
 }
 
+/* States tab */
+.states-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.states-toolbar {
+  height: 36px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.states-name-input {
+  flex: 1;
+  height: 24px;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0 8px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.states-name-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.states-name-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.states-name-input.invalid {
+  border-color: #e55;
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.states-toolbar .live-ink-btn {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.states-toolbar .live-ink-btn span {
+  line-height: 1;
+}
+
+.states-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.states-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle, var(--border-primary));
+}
+
+.states-item:hover {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.08));
+}
+
+.states-item.autoload {
+  background: var(--bg-autoload, rgba(59, 130, 246, 0.08));
+}
+
+.states-item-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.states-item-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.states-action-btn {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.states-action-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.states-autoload-btn.active {
+  color: var(--accent-blue);
+}
+
+.states-delete-btn:hover {
+  color: #e55;
+}
+
 /* Graph context menu */
 .graph-context-menu {
   position: fixed;

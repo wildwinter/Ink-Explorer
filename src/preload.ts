@@ -51,6 +51,19 @@ contextBridge.exposeInMainWorld('api', {
   },
   loadPref: (key: string): Promise<string | null> => {
     return ipcRenderer.invoke('load-pref', key);
+  },
+  // Ink state file management
+  listInkStates: (inkFilePath: string): Promise<string[]> => {
+    return ipcRenderer.invoke('list-ink-states', inkFilePath);
+  },
+  saveInkState: (inkFilePath: string, name: string, json: string): Promise<void> => {
+    return ipcRenderer.invoke('save-ink-state', inkFilePath, name, json);
+  },
+  loadInkState: (inkFilePath: string, name: string): Promise<string> => {
+    return ipcRenderer.invoke('load-ink-state', inkFilePath, name);
+  },
+  deleteInkState: (inkFilePath: string, name: string): Promise<void> => {
+    return ipcRenderer.invoke('delete-ink-state', inkFilePath, name);
   }
 });
 

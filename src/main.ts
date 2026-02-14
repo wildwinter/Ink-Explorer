@@ -241,6 +241,37 @@ ipcMain.handle('load-pref', (_event, key: string) => {
   return readPref(key);
 });
 
+// IPC handlers for ink state file management
+ipcMain.handle('list-ink-states', (_event, inkFilePath: string) => {
+  const dir = path.dirname(inkFilePath);
+  try {
+    const files = fs.readdirSync(dir);
+    return files
+      .filter(f => f.endsWith('.inkstate'))
+      .map(f => f.slice(0, -'.inkstate'.length));
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('save-ink-state', (_event, inkFilePath: string, stateName: string, stateJson: string) => {
+  const dir = path.dirname(inkFilePath);
+  const filePath = path.join(dir, `${stateName}.inkstate`);
+  fs.writeFileSync(filePath, stateJson, 'utf8');
+});
+
+ipcMain.handle('load-ink-state', (_event, inkFilePath: string, stateName: string) => {
+  const dir = path.dirname(inkFilePath);
+  const filePath = path.join(dir, `${stateName}.inkstate`);
+  return fs.readFileSync(filePath, 'utf8');
+});
+
+ipcMain.handle('delete-ink-state', (_event, inkFilePath: string, stateName: string) => {
+  const dir = path.dirname(inkFilePath);
+  const filePath = path.join(dir, `${stateName}.inkstate`);
+  fs.unlinkSync(filePath);
+});
+
 // Check if we're in development mode
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';

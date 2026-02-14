@@ -1,12 +1,15 @@
 TODO:
 -----
+
+Button icon names
 Add variable tracking.
-Add loading/saving test sets of variables.
+
+Add project path at the top
 Test external functions
 Fix issue with shuffle code view (going into a container)
 
 Add stress testing.
-Componentise.
+Componentise for use in Dinky.
 
 Proper icons.
 Proper documentation.
@@ -41,3 +44,5 @@ Test more complex Ink if you can find some.
 Reload on refocus
 Fix up About...
 Deal with long names in nodes
+Enter when submitting a stack name
+Add loading/saving test sets of variables.
