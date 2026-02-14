@@ -236,6 +236,7 @@ export class LiveInkController {
         try {
             const json = typeof storyJson === 'string' ? JSON.parse(storyJson) : storyJson;
             this.liveInkStory = new Story(json);
+            this.liveInkStory.allowExternalFunctionFallbacks = true;
 
             // Detect Dink mode via global tags
             if (this.liveInkStory.globalTags && this.liveInkStory.globalTags.some((tag: string) => tag.trim() === 'dink')) {

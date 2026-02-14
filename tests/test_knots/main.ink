@@ -49,3 +49,18 @@ We continued to walk down the dusty road.
 == house ==
 Before long, we arrived at his house.
 -> END
+
+EXTERNAL ExFunctionTestNoFallback(soundName)
+EXTERNAL ExFunctionTestWithFallback(soundName)
+=== function ExFunctionTestWithFallback(soundName)
+This is a fallback for external function, passed ({soundName})
+~ return
+
+== TestExternalFunctions
+= NoFallback
+~ ExFunctionTestNoFallback("Test")
+-> DONE
+
+= WithFallback
+~ ExFunctionTestWithFallback("Test")
+-> DONE

@@ -1,6 +1,5 @@
 TODO:
 -----
-Test external functions
 Fix issue with shuffle code view (going into a container)
 
 Add stress testing.
@@ -45,3 +44,4 @@ Button icon names
 Add variable tracking.
 Add project path at the top
 Visits
+Test external functions
