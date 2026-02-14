@@ -2,8 +2,6 @@
 
 **Ink Explorer** is a tool for visualizing and debugging [Ink](https://github.com/inkle/ink) stories. It allows you to explore the structure of your Ink code, play through it interactively, and inspect the state of your variables and visit counts in real-time.
 
-It is built on [Inkle's](https://www.inklestudios.com/) code and uses the [inkjs](https://github.com/y-lohse/inkjs) project.
-
 ![Ink Explorer Overview](doc/App.png)
 
 ## Features
@@ -86,6 +84,8 @@ You can find releases for various platforms [here](https://github.com/wildwinter
 ## Acknowledgements
 
 Huge thanks to [Inkle](https://www.inklestudios.com/) for creating Ink, and to [Yannick Lohse](https://github.com/y-lohse) for `inkjs`.
+
+This tool is built with Electron, amongst other things.
 
 ## License and Attribution
 
