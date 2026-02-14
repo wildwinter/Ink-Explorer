@@ -1,6 +1,6 @@
 {
   "name": "ink-explorer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "inkjsVersion": "2.3.2",
   "description": "Allows users to explore Dink and Ink files.",
   "main": "dist-electron/main.js",
