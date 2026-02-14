@@ -214,6 +214,12 @@ function handleNodeClick(nodeId: string, nodeType: NodeType, knotName?: string):
  */
 function startTestFromNode(nodeId: string, nodeType: NodeType, knotName?: string): void {
   if (uiManager) uiManager.switchTab('live-ink');
+
+  // Sync the graph selection to the node being tested
+  if (currentGraphController) {
+    currentGraphController.selectNode(nodeId);
+  }
+
   liveInkController.startTestFromNode(nodeId, nodeType as any, knotName); // NodeType matches string union
 }
 

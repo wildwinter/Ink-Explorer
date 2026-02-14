@@ -568,9 +568,30 @@ export class LiveInkController {
 
     // Helper: Path to nodeId
     private pathToNodeId(pathStr: string): string | null {
-        const parts = pathStr.split('.').filter(p => /^[A-Za-z_]/.test(p) && /^[A-Za-z0-9_]+$/.test(p));
-        if (parts.length === 0) return null;
-        return parts.join('.');
+        if (!pathStr) return null;
+
+        // Try exact match first
+        if (this.storyNodePaths.includes(pathStr)) return pathStr;
+
+        // If path is deeper (e.g. Knot.Stitch.s-0), ignore the tail and find the valid parent
+        // We do this by checking progressively shorter paths.
+        // Given that we mainly care about Knot or Knot.Stitch, we can just split by dot.
+
+        const parts = pathStr.split('.');
+
+        // Check for Knot.Stitch (2 parts)
+        if (parts.length >= 2) {
+            const potentialStitch = `${parts[0]}.${parts[1]}`;
+            if (this.storyNodePaths.includes(potentialStitch)) return potentialStitch;
+        }
+
+        // Check for Knot (1 part)
+        if (parts.length >= 1) {
+            const potentialKnot = parts[0];
+            if (this.storyNodePaths.includes(potentialKnot)) return potentialKnot;
+        }
+
+        return null;
     }
 
     /**
