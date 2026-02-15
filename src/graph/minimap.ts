@@ -101,7 +101,7 @@ export function createMinimap(
     function render() {
         ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
-        // 1. Background
+        // Background
         ctx.fillStyle = currentColors.bg;
         ctx.strokeStyle = currentColors.stroke;
         ctx.lineWidth = 1;
@@ -124,7 +124,7 @@ export function createMinimap(
 
         const mm = computeMapping();
 
-        // 2. Links
+        // Links
         ctx.strokeStyle = currentColors.link;
         ctx.lineWidth = 0.5;
         ctx.beginPath();
@@ -143,7 +143,7 @@ export function createMinimap(
         });
         ctx.stroke();
 
-        // 3. Nodes
+        // Nodes
         graph.nodes.forEach(node => {
             if (node.x === undefined || node.y === undefined) return;
 
@@ -170,7 +170,7 @@ export function createMinimap(
             ctx.fill();
         });
 
-        // 4. Viewport Rect
+        // Viewport Rect
         const cw = container.clientWidth;
         const ch = container.clientHeight;
         // @ts-ignore

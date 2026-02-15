@@ -1,7 +1,9 @@
 TODO:
 -----
-Add stress testing.
+Add find node.
 See what explodes with Cobbet-style content size. 
+
+Add stress testing.
 Componentise for use in Dinky.
 
 DONE:

@@ -40,10 +40,6 @@ for (let k = 0; k < NUM_KNOTS; k++) {
         count++;
         _tempExtraStitches--;
     }
-    // Ensure every knot has at least 1 stitch if possible with the total count, 
-    // but the user said "Each knot should connect to at least one of its stitches".
-    // If NUM_STITCHES < NUM_KNOTS, this is impossible. We assume NUM_STITCHES >= NUM_KNOTS.
-    // If not, we just give 0.
     knotStitchCounts.set(k, count);
 }
 
@@ -77,16 +73,29 @@ for (let k = 0; k < NUM_KNOTS; k++) {
     content += `=== knot_${k} ===\n`;
     content += `This is knot ${k}.\n`;
 
-    // Rule: Each knot should connect to at least one of its stitches.
+    // Rule: Each knot can connect to 1-3 of its child stitches (unique).
     const stitchesInThisKnot = knotStitchCounts.get(k);
 
     if (stitchesInThisKnot > 0) {
-        // Connect to one random stitch in this knot
-        const targetStitchObj = Math.floor(Math.random() * stitchesInThisKnot);
-        content += `-> stitch_${targetStitchObj}\n`;
+        // Determine number of links (1-3, capped by available stitches)
+        const maxLinks = Math.min(stitchesInThisKnot, 3);
+        const numLinks = Math.floor(Math.random() * maxLinks) + 1;
+
+        // Create array of possible targets
+        const possibleTargets = Array.from({ length: stitchesInThisKnot }, (_, i) => i);
+
+        // Shuffle to pick unique ones
+        for (let i = possibleTargets.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [possibleTargets[i], possibleTargets[j]] = [possibleTargets[j], possibleTargets[i]];
+        }
+
+        // Generate links
+        for (let i = 0; i < numLinks; i++) {
+            content += `-> stitch_${possibleTargets[i]}\n`;
+        }
     } else {
         // Fallback if no stitches: just connect to a random knot so it's not a dead end?
-        // User didn't specify. Let's redirect to an external knot to keep flow.
         content += `-> ${getRandomExternalKnot(k)}\n`;
     }
     content += `\n`;
@@ -99,18 +108,26 @@ for (let k = 0; k < NUM_KNOTS; k++) {
         let hasLinks = false;
 
         // Rule: Each stitch can connect to 0-5 of the stitches in its own knot.
-        const numInternalLinks = Math.floor(Math.random() * 6); // 0 to 5
-        // To avoid self-loops or linking to same stitch multiple times, we pick unique indices.
-        // Also exclude self? User didn't say strict no-self-loop, but typically better.
+        // Constraint: max 1 link to any specific target (avoid duplicates).
+
+        // Identify valid targets (all other stitches in this knot)
+        const otherStitchIndices = [];
+        for (let os = 0; os < stitchesInThisKnot; os++) {
+            if (os !== s) otherStitchIndices.push(os);
+        }
+
+        // Shuffle valid targets to pick random unique ones
+        for (let i = otherStitchIndices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [otherStitchIndices[i], otherStitchIndices[j]] = [otherStitchIndices[j], otherStitchIndices[i]];
+        }
+
+        // Determine number of links (0-5, but capped by available targets)
+        const maxPossibleLinks = Math.min(otherStitchIndices.length, 5);
+        const numInternalLinks = Math.floor(Math.random() * (maxPossibleLinks + 1));
 
         for (let i = 0; i < numInternalLinks; i++) {
-            if (stitchesInThisKnot <= 1) break; // Can't link to others if only 1 stitch (itself)
-
-            // Pick a random stitch that is not s
-            let targetS = Math.floor(Math.random() * stitchesInThisKnot);
-            if (targetS === s) {
-                targetS = (s + 1) % stitchesInThisKnot; // simple avoid self
-            }
+            const targetS = otherStitchIndices[i];
             content += `* [Internal Choice ${i}] -> stitch_${targetS}\n`;
             hasLinks = true;
         }
@@ -125,7 +142,6 @@ for (let k = 0; k < NUM_KNOTS; k++) {
         }
 
         // If no links generated (0 internal, 0 external), it's a dead end.
-        // User said "0-5", so 0 is allowed. The stitch just ends.
         if (!hasLinks) {
             content += `-> DONE\n`;
         } else {

@@ -206,7 +206,7 @@ function startTestFromNode(nodeId: string, nodeType: NodeType, knotName?: string
 // Set up listener for Ink compilation results from main process
 function setupCompileResultListener(): void {
   window.api.onCompileResult((result) => {
-    console.log('\n=== Ink Compilation Result ===\n');
+    console.log('Ink Compilation Result');
 
     const structureOutput = document.getElementById('structure-output');
 
@@ -216,10 +216,10 @@ function setupCompileResultListener(): void {
     }
 
     if (result.success && result.storyInfo && result.structure) {
-      console.log('✅ Ink compilation successful!');
+      console.log('Ink compilation successful');
 
       if (result.warnings.length > 0) {
-        console.warn('⚠️ Warnings:', result.warnings);
+        console.warn('Warnings:', result.warnings);
       }
 
       console.log('\nStory Info:', result.storyInfo);
@@ -342,7 +342,7 @@ function setupCompileResultListener(): void {
       uiManager.initCodeViewToolbar();
 
     } else {
-      console.error('❌ Ink compilation failed!');
+      console.error('Ink compilation failed');
       console.error('Errors:', result.errors);
 
       if (result.warnings.length > 0) {
@@ -384,6 +384,6 @@ function setupCompileResultListener(): void {
       statesController.clear();
     }
 
-    console.log('\n===============================\n');
+    console.log('-----------------------------');
   });
 }

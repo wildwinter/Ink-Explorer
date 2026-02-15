@@ -1,6 +1,11 @@
 /**
  * Graph Layout Logic
  * Handles the conversion of story structure to graph data and computing node positions
+ * Strictly enforces:
+ * 1. Knot Islands (Knot at top, stitches below)
+ * 2. Left-to-Right flow for Knots
+ * 3. Top-to-Bottom flow for Stitches within Knots
+ * 4. No Overlaps
  */
 
 import type { StoryStructure, KnotInfo, StitchInfo } from '../ink/analyzer.js';
@@ -14,12 +19,12 @@ export interface GraphNode {
     knotName?: string; // For stitches, track which knot they belong to
     x?: number;
     y?: number;
-    fx?: number | null; // For d3 force simulation
-    fy?: number | null; // For d3 force simulation
+    width?: number;  // Calculated width
+    height?: number; // Calculated height
 }
 
 export interface GraphLink {
-    source: string | GraphNode; // d3 force simulation replaces string ids with node objects
+    source: string | GraphNode;
     target: string | GraphNode;
     isConditional: boolean;
 }
@@ -27,6 +32,25 @@ export interface GraphLink {
 export interface Graph {
     nodes: GraphNode[];
     links: GraphLink[];
+}
+
+// Layout Constants
+const NODE_WIDTH = 180;  // Slightly wider to accommodate text
+const NODE_HEIGHT = 60;
+const KNOT_PADDING = 20; // Padding inside the knot island
+const STITCH_SPACING_Y = 40; // Vertical space between stitches in an island
+const ISLAND_SPACING_X = 150; // Horizontal space between knot islands
+const ISLAND_SPACING_Y = 80;  // Vertical space between knot islands
+
+export interface Island {
+    id: string;
+    knotNode: GraphNode;
+    stitches: GraphNode[];
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    rank: number; // Horizontal rank (column)
 }
 
 /**
@@ -38,7 +62,7 @@ export function structureToGraph(structure: StoryStructure): Graph {
     const nodeIds = new Set<string>();
 
     // Always create root node — it represents the story entry point
-    nodes.push({ id: '__root__', label: 'Root', type: 'root' });
+    nodes.push({ id: '__root__', label: 'Root', type: 'root', width: NODE_WIDTH, height: NODE_HEIGHT });
     nodeIds.add('__root__');
 
     // Create nodes for all knots and stitches
@@ -48,7 +72,9 @@ export function structureToGraph(structure: StoryStructure): Graph {
             nodes.push({
                 id: knotId,
                 label: knot.name,
-                type: 'knot'
+                type: 'knot',
+                width: NODE_WIDTH,
+                height: NODE_HEIGHT
             });
             nodeIds.add(knotId);
         }
@@ -61,621 +87,516 @@ export function structureToGraph(structure: StoryStructure): Graph {
                     id: stitchId,
                     label: stitch.name,
                     type: 'stitch',
-                    knotName: knot.name
+                    knotName: knot.name,
+                    width: NODE_WIDTH,
+                    height: NODE_HEIGHT
                 });
                 nodeIds.add(stitchId);
             }
         });
     });
 
-    // Create links from knot and stitch exits (same data source as the structure output)
+    // Create links
+    const createLink = (source: string, target: string) => {
+        if (nodeIds.has(source) && nodeIds.has(target)) {
+            links.push({
+                source,
+                target,
+                isConditional: false
+            });
+        }
+    };
+
     structure.knots.forEach((knot: KnotInfo) => {
-        const sourceId = knot.name;
+        // Knot exits
+        knot.exits.forEach((targetName: string) => createLink(knot.name, targetName));
 
-        // Add links from knot exits
-        knot.exits.forEach((targetName: string) => {
-            // Check if target exists as a node (could be a knot or a knot.stitch)
-            if (nodeIds.has(targetName)) {
-                links.push({
-                    source: sourceId,
-                    target: targetName,
-                    isConditional: false
-                });
-            }
-        });
-
-        // Add links from stitch exits
+        // Stitch exits
         knot.stitches.forEach((stitch: StitchInfo) => {
             const stitchId = `${knot.name}.${stitch.name}`;
-
-            stitch.exits.forEach((targetName: string) => {
-                // Check if target exists as a node
-                if (nodeIds.has(targetName)) {
-                    links.push({
-                        source: stitchId,
-                        target: targetName,
-                        isConditional: false
-                    });
-                }
-            });
+            stitch.exits.forEach((targetName: string) => createLink(stitchId, targetName));
         });
     });
 
-    // Add links from root exits
-    if (structure.rootExits && nodeIds.has('__root__')) {
-        structure.rootExits.forEach((targetName: string) => {
-            if (nodeIds.has(targetName)) {
-                links.push({ source: '__root__', target: targetName, isConditional: false });
-            }
-        });
+    // Root exits
+    if (structure.rootExits) {
+        structure.rootExits.forEach((targetName: string) => createLink('__root__', targetName));
     }
 
     return { nodes, links };
 }
 
 /**
- * Function to compute hierarchical positions (top-to-bottom based on story flow)
+ * Computes the strict layout for the graph.
  */
-export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<string, GraphNode[]>, height: number) {
-    // Build adjacency map (only for knot-level connections)
-    const adjacency = new Map<string, Set<string>>();
-    const reverseAdjacency = new Map<string, Set<string>>();
+export function computeStrictLayout(graph: Graph): void {
+    const islands = createKnotIslands(graph);
 
-    graph.nodes.forEach(n => {
-        if (n.type === 'knot' || n.type === 'root') {
-            adjacency.set(n.id, new Set());
-            reverseAdjacency.set(n.id, new Set());
+    // Build Island Graph (Adjacency between islands)
+    // We need both Directed (for Rank) and Undirected (for Components)
+    const islandAdjacency = new Map<string, Set<string>>();
+    const islandReverseAdjacency = new Map<string, Set<string>>();
+    const islandUndirectedAdjacency = new Map<string, Set<string>>();
+
+    // Initialize adjacency maps
+    islands.forEach(island => {
+        islandAdjacency.set(island.id, new Set());
+        islandReverseAdjacency.set(island.id, new Set());
+        islandUndirectedAdjacency.set(island.id, new Set());
+    });
+
+    // Populate adjacency based on node links
+    graph.links.forEach(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        const sourceIsland = findIslandForNode(sourceId, islands);
+        const targetIsland = findIslandForNode(targetId, islands);
+
+        if (sourceIsland && targetIsland && sourceIsland !== targetIsland) {
+            islandAdjacency.get(sourceIsland.id)!.add(targetIsland.id);
+            islandReverseAdjacency.get(targetIsland.id)!.add(sourceIsland.id);
+
+            islandUndirectedAdjacency.get(sourceIsland.id)!.add(targetIsland.id);
+            islandUndirectedAdjacency.get(targetIsland.id)!.add(sourceIsland.id);
         }
     });
+
+    // Identify Connected Components
+    const components = getConnectedComponents(islands, islandUndirectedAdjacency);
+
+    // Layout Each Component Independently
+    let currentComponentY = 0;
+
+    // Sort components by size (largest first)? Or deterministically?
+    // Deterministic is better for stability.
+    // Sort by ID of the first island in component.
+    components.sort((a, b) => a[0].id.localeCompare(b[0].id));
+
+    components.forEach(componentIslands => {
+        // Rank Islands within this component
+        rankIslands(componentIslands, islandAdjacency);
+
+        // Position Islands within this component (Relative to component 0,0)
+        // Passes reverse adjacency for Barycenter heuristic
+        positionIslands(componentIslands, islandReverseAdjacency);
+
+        // Calculate Component Height and Shift
+        let compHeight = 0;
+        componentIslands.forEach(island => {
+            island.y += currentComponentY; // Apply vertical stack offset
+            compHeight = Math.max(compHeight, island.y - currentComponentY + island.height);
+        });
+
+        currentComponentY += compHeight + ISLAND_SPACING_Y * 2; // Extra spacing between components
+    });
+
+    // Finalize Node Positions
+    applyPositionsToNodes(islands);
+}
+
+function getConnectedComponents(
+    islands: Island[],
+    undirectedAdjacency: Map<string, Set<string>>
+): Island[][] {
+    const visited = new Set<string>();
+    const components: Island[][] = [];
+
+    // Sort islands to ensure deterministic component discovery 
+    // (if graph is disconnected, order matters for which component is "first")
+    const sortedIslands = [...islands].sort((a, b) => a.id.localeCompare(b.id));
+
+    sortedIslands.forEach(island => {
+        if (visited.has(island.id)) return;
+
+        const component: Island[] = [];
+        const queue = [island];
+        visited.add(island.id);
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            component.push(current);
+
+            const neighbors = undirectedAdjacency.get(current.id);
+            if (neighbors) {
+                neighbors.forEach(neighborId => {
+                    const neighbor = islands.find(i => i.id === neighborId); // optimize? Map lookup is faster
+                    if (neighbor && !visited.has(neighborId)) {
+                        visited.add(neighborId);
+                        queue.push(neighbor);
+                    }
+                });
+            }
+        }
+        components.push(component);
+    });
+
+    return components;
+}
+
+function createKnotIslands(graph: Graph): Island[] {
+    const islandMap = new Map<string, Island>();
+
+    // Identify Island Roots (Knots and Root)
+    graph.nodes.forEach(node => {
+        if (node.type === 'knot' || node.type === 'root') {
+            islandMap.set(node.id, {
+                id: node.id,
+                knotNode: node,
+                stitches: [],
+                width: NODE_WIDTH + KNOT_PADDING * 2,
+                height: NODE_HEIGHT + KNOT_PADDING * 2,
+                x: 0,
+                y: 0,
+                rank: 0
+            });
+        }
+    });
+
+    // Assign Stitches to Islands
+    graph.nodes.forEach(node => {
+        if (node.type === 'stitch' && node.knotName) {
+            const island = islandMap.get(node.knotName);
+            if (island) {
+                island.stitches.push(node);
+            }
+        }
+    });
+
+    // Layout Internals of each Island
+    islandMap.forEach(island => {
+        layoutStitchesInIsland(island, graph);
+    });
+
+    return Array.from(islandMap.values());
+}
+
+function layoutStitchesInIsland(island: Island, graph: Graph) {
+    // Collect stitches and build local dependency graph
+    const stitches = island.stitches;
+    if (stitches.length === 0) {
+        // Just the knot
+        island.knotNode.x = KNOT_PADDING;
+        island.knotNode.y = KNOT_PADDING;
+        island.width = NODE_WIDTH + KNOT_PADDING * 2;
+        island.height = NODE_HEIGHT + KNOT_PADDING * 2;
+        return;
+    }
+
+    const stitchIdMap = new Map<string, GraphNode>();
+    stitches.forEach(s => stitchIdMap.set(s.id, s));
+
+    const localAdj = new Map<string, string[]>();
+    const localInDegree = new Map<string, number>();
+    stitches.forEach(s => {
+        localAdj.set(s.id, []);
+        localInDegree.set(s.id, 0); // Initialize
+    });
+
+    // Identify links between stitches WITHIN this island
+    // Also links from Knot -> Stitch
+    const knotId = island.knotNode.id;
+    const connectedFromKnot = new Set<string>();
 
     graph.links.forEach(link => {
-        const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
-        const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
 
-        // Only track knot-to-knot connections
-        const sourceNode = graph.nodes.find(n => n.id === sourceId);
-        const targetNode = graph.nodes.find(n => n.id === targetId);
+        const isInternalStitchLink = stitchIdMap.has(sourceId) && stitchIdMap.has(targetId);
+        if (isInternalStitchLink) {
+            localAdj.get(sourceId)!.push(targetId);
+            localInDegree.set(targetId, (localInDegree.get(targetId) || 0) + 1);
+        }
 
-        if (sourceNode && targetNode) {
-            const sourceKnot = (sourceNode.type === 'knot' || sourceNode.type === 'root') ? sourceNode.id : sourceNode.knotName;
-            const targetKnot = (targetNode.type === 'knot' || targetNode.type === 'root') ? targetNode.id : targetNode.knotName;
-
-            if (sourceKnot && targetKnot && sourceKnot !== targetKnot) {
-                adjacency.get(sourceKnot)?.add(targetKnot);
-                reverseAdjacency.get(targetKnot)?.add(sourceKnot);
-            }
+        const isKnotToStitch = sourceId === knotId && stitchIdMap.has(targetId);
+        if (isKnotToStitch) {
+            connectedFromKnot.add(targetId);
+            // We treat Knot->Stitch as a primary vertical flow, but "parallel streams" 
+            // imply we might have multiple starts.
+            // We won't increment inDegree here to allow them to be "Roots" of streams 
+            // if they don't have other stitch dependencies.
         }
     });
 
-    // Compute depth (vertical level) for knots using BFS
-    const depths = new Map<string, number>();
+    // Identify Stream Roots: Stitches with In-Degree 0 (from other stitches)
+    // These start new vertical chains.
+    const streamRoots = stitches.filter(s => (localInDegree.get(s.id) || 0) === 0);
+
+    // If no roots (cycle?), pick one arbitrarily
+    if (streamRoots.length === 0 && stitches.length > 0) {
+        streamRoots.push(stitches[0]);
+    }
+
+    // Assign Streams and Depths (Simple DFS/BFS per root)
+    // We want to layout streams horizontally.
+
+    let currentStreamX = KNOT_PADDING;
+    let maxIslandHeight = 0;
+
+    // Sort stream roots: Connected from Knot first?
+    streamRoots.sort((a, b) => {
+        const aConnected = connectedFromKnot.has(a.id) ? 1 : 0;
+        const bConnected = connectedFromKnot.has(b.id) ? 1 : 0;
+        if (aConnected !== bConnected) return bConnected - aConnected; // Connected first
+        return a.id.localeCompare(b.id);
+    });
+
     const visited = new Set<string>();
-    const queue: Array<{ id: string; depth: number }> = [];
 
-    // Knots and root are laid out at the top level
-    const knots = graph.nodes.filter(n => n.type === 'knot' || n.type === 'root');
+    streamRoots.forEach(root => {
+        if (visited.has(root.id)) return;
 
-    // Start BFS from root node if present, otherwise from the first knot
-    const startNode = knots.find(n => n.type === 'root') || knots[0];
-    if (startNode) {
-        queue.push({ id: startNode.id, depth: 0 });
-        visited.add(startNode.id);
-        depths.set(startNode.id, 0);
-    }
+        // Trace this stream
+        const streamNodes: GraphNode[] = [];
+        const queue = [root];
 
-    // BFS to assign depths - follow both forward and reverse edges
-    // so that nodes only reachable via reverse edges (e.g. OtherContent → Main)
-    // are still part of the connected component
-    while (queue.length > 0) {
-        const { id, depth } = queue.shift()!;
+        while (queue.length > 0) {
+            const node = queue.shift()!;
+            if (visited.has(node.id)) continue;
+            visited.add(node.id);
+            streamNodes.push(node);
 
-        // Forward edges: children at depth + 1
-        const forward = adjacency.get(id);
-        if (forward) {
-            for (const neighborId of forward) {
-                if (!visited.has(neighborId)) {
-                    visited.add(neighborId);
-                    depths.set(neighborId, depth + 1);
-                    queue.push({ id: neighborId, depth: depth + 1 });
+            const children = localAdj.get(node.id) || [];
+            // Sort children by connection?
+            children.forEach(childId => {
+                const child = stitchIdMap.get(childId);
+                if (child && !visited.has(childId)) {
+                    queue.push(child);
                 }
-            }
+            });
         }
 
-        // Reverse edges: nodes that point to us, also at depth + 1
-        const backward = reverseAdjacency.get(id);
-        if (backward) {
-            for (const neighborId of backward) {
-                if (!visited.has(neighborId)) {
-                    visited.add(neighborId);
-                    depths.set(neighborId, depth + 1);
-                    queue.push({ id: neighborId, depth: depth + 1 });
-                }
-            }
-        }
-    }
+        // Layout this stream vertically
+        let currentY = KNOT_PADDING + NODE_HEIGHT + STITCH_SPACING_Y;
 
-    // Record which knots are in the connected graph
-    const connectedKnotIds = new Set(visited);
+        // Knot is centered above *all* streams? 
+        // Or just placed at top-left? Top-left is safest for now.
 
-    // Process truly disconnected knots (no edges to/from the connected graph)
-    // Each component gets its own internal hierarchy starting from depth 0
-    while (true) {
-        const unvisitedKnot = knots.find(n => !visited.has(n.id));
-        if (!unvisitedKnot) break;
-
-        // Discover all nodes in this disconnected component (undirected)
-        const component = new Set<string>();
-        const discoverQueue = [unvisitedKnot.id];
-        component.add(unvisitedKnot.id);
-
-        while (discoverQueue.length > 0) {
-            const id = discoverQueue.shift()!;
-            for (const neighborId of [...(adjacency.get(id) || []), ...(reverseAdjacency.get(id) || [])]) {
-                if (!component.has(neighborId) && !visited.has(neighborId)) {
-                    component.add(neighborId);
-                    discoverQueue.push(neighborId);
-                }
-            }
-        }
-
-        // Directed BFS within the component (starting from depth 0)
-        const componentEntry = Array.from(component).find(id => {
-            const incoming = reverseAdjacency.get(id);
-            return !incoming || !Array.from(incoming).some(src => component.has(src));
-        }) || Array.from(component)[0];
-
-        const compQueue: Array<{ id: string; depth: number }> = [];
-        compQueue.push({ id: componentEntry, depth: 0 });
-        visited.add(componentEntry);
-        depths.set(componentEntry, 0);
-
-        while (compQueue.length > 0) {
-            const { id, depth: d } = compQueue.shift()!;
-            const forward = adjacency.get(id);
-            if (forward) {
-                for (const neighborId of forward) {
-                    if (!visited.has(neighborId) && component.has(neighborId)) {
-                        visited.add(neighborId);
-                        depths.set(neighborId, d + 1);
-                        compQueue.push({ id: neighborId, depth: d + 1 });
-                    }
-                }
-            }
-        }
-
-        // Handle remaining nodes in the component (cycles etc.)
-        component.forEach(id => {
-            if (!visited.has(id)) {
-                visited.add(id);
-                depths.set(id, 0);
-            }
+        streamNodes.forEach(node => {
+            node.x = currentStreamX;
+            node.y = currentY;
+            currentY += NODE_HEIGHT + STITCH_SPACING_Y;
         });
-    }
 
-    // Layout parameters
-    const depthSpacing = 300; // Horizontal spacing between knot levels (left-to-right)
-    const knotVerticalSpacing = 400; // Vertical spacing when spreading multiple children
-    const stitchVerticalOffset = 100; // Offset for stitches below their knot
-    const stitchHorizontalSpacing = 150; // Horizontal spacing for stitches
+        const streamWidth = NODE_WIDTH;
+        const streamHeight = currentY - STITCH_SPACING_Y; // Remove last spacing
 
-    // Group knots by depth
-    const knotsByDepth = new Map<number, GraphNode[]>();
-    knots.forEach(n => {
-        const depth = depths.get(n.id) || 0;
-        if (!knotsByDepth.has(depth)) {
-            knotsByDepth.set(depth, []);
-        }
-        knotsByDepth.get(depth)!.push(n);
+        maxIslandHeight = Math.max(maxIslandHeight, streamHeight);
+        currentStreamX += streamWidth + KNOT_PADDING; // Spacing between streams
     });
 
-    // Track vertical positions for knots (horizontal layout: left-to-right with vertical spreading)
-    const verticalPositions = new Map<string, number>();
-    const positioned = new Set<string>();
+    // Handle any unreachable stitches (cycles disconnected from roots?)
+    stitches.forEach(s => {
+        if (!visited.has(s.id)) {
+            // Append as new stream
+            s.x = currentStreamX;
+            s.y = KNOT_PADDING + NODE_HEIGHT + STITCH_SPACING_Y;
+            currentStreamX += NODE_WIDTH + KNOT_PADDING;
+            maxIslandHeight = Math.max(maxIslandHeight, s.y! + NODE_HEIGHT);
+        }
+    });
 
-    // Layout knots level by level, processing parents before children
-    const sortedDepths = Array.from(knotsByDepth.keys()).sort((a, b) => a - b);
+    // Update Island Dimensions
+    island.width = Math.max(currentStreamX - KNOT_PADDING + KNOT_PADDING, NODE_WIDTH + KNOT_PADDING * 2);
+    island.height = Math.max(maxIslandHeight + KNOT_PADDING, NODE_HEIGHT + KNOT_PADDING * 2);
 
-    sortedDepths.forEach(depth => {
-        const knotsAtDepth = knotsByDepth.get(depth) || [];
+    // Center Knot Node over the Island
+    island.knotNode.x = (island.width - NODE_WIDTH) / 2;
+    island.knotNode.y = KNOT_PADDING;
+}
 
-        // First, position any nodes at this depth that don't have parents
-        knotsAtDepth.forEach(knotNode => {
-            const parents = reverseAdjacency.get(knotNode.id);
-            if (!parents || parents.size === 0) {
-                if (!positioned.has(knotNode.id)) {
-                    // Root nodes - spread vertically centered
-                    const rootNodes = knotsAtDepth.filter(n => {
-                        const p = reverseAdjacency.get(n.id);
-                        return !p || p.size === 0;
-                    });
-                    const index = rootNodes.indexOf(knotNode);
-                    const totalRoots = rootNodes.length;
-                    const centerY = height / 2;
-                    const spreadHeight = (totalRoots - 1) * knotVerticalSpacing;
-                    verticalPositions.set(knotNode.id, centerY - spreadHeight / 2 + index * knotVerticalSpacing);
-                    positioned.add(knotNode.id);
-                }
-            }
-        });
+function findIslandForNode(nodeId: string, islands: Island[]): Island | undefined {
+    // Check if it's an island ID
+    let island = islands.find(i => i.id === nodeId);
+    if (island) return island;
 
-        // Now position children based on their parents
-        // Group children by their parent(s)
-        const childrenByParent = new Map<string, Set<string>>();
+    // Check stitches
+    for (const i of islands) {
+        if (i.stitches.some(s => s.id === nodeId)) return i;
+    }
+    return undefined;
+}
 
-        if (depth > 0) {
-            const prevDepthKnots = knotsByDepth.get(depth - 1) || [];
-            prevDepthKnots.forEach(parentKnot => {
-                const children = adjacency.get(parentKnot.id);
-                if (children && children.size > 0) {
-                    childrenByParent.set(parentKnot.id, children);
-                }
-            });
+function rankIslands(
+    islands: Island[],
+    adjacency: Map<string, Set<string>>
+) {
+    const ranks = new Map<string, number>();
 
-            // Position children for each parent
-            childrenByParent.forEach((children, parentId) => {
-                const parentY = verticalPositions.get(parentId);
-                if (parentY === undefined) return;
+    // Identify Back Edges:
+    // Run DFS. If edge (u, v) goes to ancestor, mark as Back Edge.
+    const backEdges = new Set<string>(); // "source->target"
+    const dfsVisited = new Set<string>();
+    const dfsStack = new Set<string>();
 
-                const childrenArray = Array.from(children).filter(c => !positioned.has(c));
-                if (childrenArray.length === 0) return;
+    const detectBackEdges = (u: string) => {
+        dfsVisited.add(u);
+        dfsStack.add(u);
 
-                if (childrenArray.length === 1) {
-                    // Single child - same vertical position as parent
-                    const childId = childrenArray[0];
-                    verticalPositions.set(childId, parentY);
-                    positioned.add(childId);
-                } else {
-                    // Multiple children - spread vertically, centered as a group around parent
-                    const spreadHeight = (childrenArray.length - 1) * knotVerticalSpacing;
-                    childrenArray.forEach((childId, index) => {
-                        const childY = parentY - spreadHeight / 2 + index * knotVerticalSpacing;
-
-                        // If child already has a position from another parent, average them
-                        if (verticalPositions.has(childId)) {
-                            const existingY = verticalPositions.get(childId)!;
-                            verticalPositions.set(childId, (existingY + childY) / 2);
-                        } else {
-                            verticalPositions.set(childId, childY);
-                        }
-                        positioned.add(childId);
-                    });
+        const targets = adjacency.get(u);
+        if (targets) {
+            targets.forEach(v => {
+                if (!dfsVisited.has(v)) {
+                    detectBackEdges(v);
+                } else if (dfsStack.has(v)) {
+                    // Back Edge detected
+                    backEdges.add(`${u}->${v}`);
                 }
             });
         }
+        dfsStack.delete(u);
+    };
 
-        // Finally, position any remaining unpositioned nodes at this depth
-        knotsAtDepth.forEach(knotNode => {
-            if (!positioned.has(knotNode.id)) {
-                // Unconnected nodes - spread them out vertically
-                const unpositioned = knotsAtDepth.filter(n => !positioned.has(n.id));
-                const index = unpositioned.indexOf(knotNode);
-                const centerY = height / 2;
-                const spreadHeight = (unpositioned.length - 1) * knotVerticalSpacing;
-                verticalPositions.set(knotNode.id, centerY - spreadHeight / 2 + index * knotVerticalSpacing);
-                positioned.add(knotNode.id);
-            }
+    // Run Cycle Detection from Roots (and unvisited for disconnected components)
+    // We iterate islands to catch all components
+    islands.forEach(i => {
+        if (!dfsVisited.has(i.id)) {
+            detectBackEdges(i.id);
+        }
+    });
+
+    // Now run Forward-Push BFS/Relaxation ignoring Back Edges
+    // Initialize Ranks
+    islands.forEach(i => ranks.set(i.id, 0));
+
+    // Use a robust relaxation loop
+    // But limit iterations to avoid any weird infinite loops (though back-edge removal should fix it)
+
+    let changed = true;
+    let iterations = 0;
+    const MAX_ITERATIONS = islands.length + 50;
+
+    while (changed && iterations < MAX_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        // Iterate all edges
+        adjacency.forEach((targets, u) => {
+            targets.forEach(v => {
+                if (backEdges.has(`${u}->${v}`)) return; // Ignore back edges
+
+                const rankU = ranks.get(u) || 0;
+                const rankV = ranks.get(v) || 0;
+
+                if (rankU + 1 > rankV) {
+                    ranks.set(v, rankU + 1);
+                    changed = true;
+                }
+            });
         });
+    }
 
-        // Now position knots and their stitches
-        knotsAtDepth.forEach((knotNode) => {
-            // Horizontal layout: X based on depth (left-to-right), Y from vertical position map
-            const baseX = 100 + depth * depthSpacing;
-            const baseY = verticalPositions.get(knotNode.id)!;
+    islands.forEach(i => {
+        i.rank = ranks.get(i.id) || 0;
+    });
+}
 
-            // Store original baseY for later adjustment
-            (knotNode as any).originalBaseY = baseY;
+function positionIslands(
+    islands: Island[],
+    reverseAdjacency: Map<string, Set<string>>
+) {
+    // Group by Rank
+    const rankMap = new Map<number, Island[]>();
+    islands.forEach(i => {
+        if (!rankMap.has(i.rank)) rankMap.set(i.rank, []);
+        rankMap.get(i.rank)!.push(i);
+    });
 
-            // Get stitches for this knot (in order from original structure)
-            const stitches = knotGroups.get(knotNode.id) || [];
+    const maxRank = Math.max(...Array.from(rankMap.keys()), 0);
+    let currentX = 0;
 
-            if (stitches.length > 0) {
-                // Build adjacency map for stitches within this knot
-                const stitchAdjacency = new Map<string, Set<string>>();
-                const stitchReverseAdjacency = new Map<string, Set<string>>();
+    // Optimize: Create lookup for quick retrieval
+    const islandMap = new Map<string, Island>();
+    islands.forEach(i => islandMap.set(i.id, i));
 
-                stitches.forEach(s => {
-                    stitchAdjacency.set(s.id, new Set());
-                    stitchReverseAdjacency.set(s.id, new Set());
-                });
+    for (let r = 0; r <= maxRank; r++) {
+        const rankIslands = rankMap.get(r) || [];
+        if (rankIslands.length === 0) continue;
 
-                // Find connections between stitches in this knot
-                graph.links.forEach(link => {
-                    const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
-                    const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
+        let rankMaxWidth = 0;
+        rankIslands.forEach(i => rankMaxWidth = Math.max(rankMaxWidth, i.width));
 
-                    const sourceStitch = stitches.find(s => s.id === sourceId);
-                    const targetStitch = stitches.find(s => s.id === targetId);
+        // Calculate Ideal Y (Barycenter)
+        const islandIdealY = new Map<string, number>();
 
-                    if (sourceStitch && targetStitch) {
-                        stitchAdjacency.get(sourceId)?.add(targetId);
-                        stitchReverseAdjacency.get(targetId)?.add(sourceId);
-                    }
-                });
-
-                // Compute depths for stitches
-                const stitchDepths = new Map<string, number>();
-                const stitchVisited = new Set<string>();
-                const stitchQueue: Array<{ id: string; depth: number }> = [];
-
-                // Start with first stitch or stitches with no parents
-                const rootStitches = stitches.filter(s =>
-                    stitchReverseAdjacency.get(s.id)?.size === 0
-                );
-
-                if (rootStitches.length > 0) {
-                    rootStitches.forEach(s => {
-                        stitchQueue.push({ id: s.id, depth: 0 });
-                        stitchVisited.add(s.id);
-                        stitchDepths.set(s.id, 0);
-                    });
-                } else {
-                    // No clear root, start with first stitch
-                    stitchQueue.push({ id: stitches[0].id, depth: 0 });
-                    stitchVisited.add(stitches[0].id);
-                    stitchDepths.set(stitches[0].id, 0);
-                }
-
-                // BFS to assign depths
-                while (stitchQueue.length > 0) {
-                    const { id, depth } = stitchQueue.shift()!;
-                    const neighbors = stitchAdjacency.get(id);
-
-                    if (neighbors) {
-                        for (const neighborId of neighbors) {
-                            if (!stitchVisited.has(neighborId)) {
-                                stitchVisited.add(neighborId);
-                                stitchDepths.set(neighborId, depth + 1);
-                                stitchQueue.push({ id: neighborId, depth: depth + 1 });
-                            }
-                        }
-                    }
-                }
-
-                // Assign depths to any unvisited stitches
-                stitches.forEach(s => {
-                    if (!stitchDepths.has(s.id)) {
-                        stitchDepths.set(s.id, 0);
-                    }
-                });
-
-                // Group stitches by depth
-                const stitchesByDepth = new Map<number, typeof stitches>();
-                stitches.forEach(s => {
-                    const d = stitchDepths.get(s.id) || 0;
-                    if (!stitchesByDepth.has(d)) {
-                        stitchesByDepth.set(d, []);
-                    }
-                    stitchesByDepth.get(d)!.push(s);
-                });
-
-                // Layout stitches using the same parent-child rule
-                const stitchHorizontalPositions = new Map<string, number>();
-                const stitchPositioned = new Set<string>();
-                const stitchVerticalSpacing = 90;
-
-                const sortedStitchDepths = Array.from(stitchesByDepth.keys()).sort((a, b) => a - b);
-
-                sortedStitchDepths.forEach(stitchDepth => {
-                    const stitchesAtDepth = stitchesByDepth.get(stitchDepth) || [];
-
-                    // Position root stitches (no parents)
-                    stitchesAtDepth.forEach(stitch => {
-                        const parents = stitchReverseAdjacency.get(stitch.id);
-                        if (!parents || parents.size === 0) {
-                            if (!stitchPositioned.has(stitch.id)) {
-                                const rootStitches = stitchesAtDepth.filter(s => {
-                                    const p = stitchReverseAdjacency.get(s.id);
-                                    return !p || p.size === 0;
-                                });
-                                const index = rootStitches.indexOf(stitch);
-                                const spreadWidth = (rootStitches.length - 1) * stitchHorizontalSpacing;
-                                stitchHorizontalPositions.set(stitch.id, - spreadWidth / 2 + index * stitchHorizontalSpacing);
-                                stitchPositioned.add(stitch.id);
-                            }
-                        }
-                    });
-
-                    // Position children based on their parents
-                    if (stitchDepth > 0) {
-                        const prevDepthStitches = stitchesByDepth.get(stitchDepth - 1) || [];
-
-                        prevDepthStitches.forEach(parentStitch => {
-                            const children = stitchAdjacency.get(parentStitch.id);
-                            if (!children || children.size === 0) return;
-
-                            const parentX = stitchHorizontalPositions.get(parentStitch.id);
-                            if (parentX === undefined) return;
-
-                            const childrenArray = Array.from(children).filter(c => !stitchPositioned.has(c));
-                            if (childrenArray.length === 0) return;
-
-                            if (childrenArray.length === 1) {
-                                // Single child - center below parent
-                                const childId = childrenArray[0];
-                                stitchHorizontalPositions.set(childId, parentX);
-                                stitchPositioned.add(childId);
-                            } else {
-                                // Multiple children - spread horizontally, centered as a group below parent
-                                const spreadWidth = (childrenArray.length - 1) * stitchHorizontalSpacing;
-                                childrenArray.forEach((childId, index) => {
-                                    const childX = parentX - spreadWidth / 2 + index * stitchHorizontalSpacing;
-
-                                    if (stitchHorizontalPositions.has(childId)) {
-                                        const existingX = stitchHorizontalPositions.get(childId)!;
-                                        stitchHorizontalPositions.set(childId, (existingX + childX) / 2);
-                                    } else {
-                                        stitchHorizontalPositions.set(childId, childX);
-                                    }
-                                    stitchPositioned.add(childId);
-                                });
-                            }
-                        });
-                    }
-
-                    // Position any remaining stitches at this depth
-                    stitchesAtDepth.forEach(stitch => {
-                        if (!stitchPositioned.has(stitch.id)) {
-                            const unpositioned = stitchesAtDepth.filter(s => !stitchPositioned.has(s.id));
-                            const index = unpositioned.indexOf(stitch);
-                            const spreadWidth = (unpositioned.length - 1) * stitchHorizontalSpacing;
-                            stitchHorizontalPositions.set(stitch.id, - spreadWidth / 2 + index * stitchHorizontalSpacing);
-                            stitchPositioned.add(stitch.id);
-                        }
-                    });
-                });
-
-                // Position stitches
-                stitches.forEach((stitch) => {
-                    const stitchDepth = stitchDepths.get(stitch.id) || 0;
-                    stitch.x = baseX + (stitchHorizontalPositions.get(stitch.id) || 0);
-                    stitch.y = baseY + stitchVerticalOffset + stitchDepth * stitchVerticalSpacing;
-                });
-
-                // Position knot
-                knotNode.x = baseX;
-                knotNode.y = baseY;
+        rankIslands.forEach(island => {
+            let idealY = 0;
+            if (r === 0) {
+                // Rank 0: Keep roughly centered or just basic stack order?
+                // We rely on the sort below to stack them tightly starting at 0 if no heuristic.
+                idealY = 0;
             } else {
-                // Knot has no stitches - position normally
-                knotNode.x = baseX;
-                knotNode.y = baseY;
-            }
-        });
-    });
-
-    // Post-process to fix overlapping knots and avoid stitches
-    // Pre-calculate relative bounds for all knots (including their stitches)
-    const knotBounds = new Map<string, { minX: number, maxX: number, minY: number, maxY: number }>();
-
-    const KNOT_HALF_WIDTH = 60;
-    const KNOT_HALF_HEIGHT = 30;
-
-    knots.forEach(k => {
-        let minX = -KNOT_HALF_WIDTH;
-        let maxX = KNOT_HALF_WIDTH;
-        let minY = -KNOT_HALF_HEIGHT;
-        let maxY = KNOT_HALF_HEIGHT;
-
-        const stitches = knotGroups.get(k.id) || [];
-        stitches.forEach(s => {
-            // Calculate relative position of stitch to knot
-            if (s.x !== undefined && s.y !== undefined && k.x !== undefined && k.y !== undefined) {
-                const dx = s.x - k.x;
-                const dy = s.y - k.y;
-                minX = Math.min(minX, dx - KNOT_HALF_WIDTH);
-                maxX = Math.max(maxX, dx + KNOT_HALF_WIDTH);
-                minY = Math.min(minY, dy - KNOT_HALF_HEIGHT);
-                maxY = Math.max(maxY, dy + KNOT_HALF_HEIGHT);
-            }
-        });
-
-        knotBounds.set(k.id, { minX, maxX, minY, maxY });
-    });
-
-    // Iterate through knots by depth to check for conflicts
-    sortedDepths.forEach(depth => {
-        const knotsAtDepth = knotsByDepth.get(depth) || [];
-
-        knotsAtDepth.forEach(knotNode => {
-            if (!knotNode.x || !knotNode.y) return;
-
-            let hasConflict = true;
-            let offsetAttempts = 0;
-            const maxOffsetAttempts = 20;
-
-            while (hasConflict && offsetAttempts < maxOffsetAttempts) {
-                hasConflict = false;
-
-                // Check knots at same depth and immediately previous depth
-                const startDepth = Math.max(0, depth - 1);
-
-                for (let d = startDepth; d <= depth; d++) {
-                    const checkKnots = knotsByDepth.get(d) || [];
-
-                    for (const otherKnot of checkKnots) {
-                        if (otherKnot === knotNode || !otherKnot.x || !otherKnot.y) continue;
-
-                        // Use pre-calculated bounds
-                        const otherBounds = knotBounds.get(otherKnot.id);
-                        if (!otherBounds) continue;
-
-                        const otherMinX = otherKnot.x + otherBounds.minX;
-                        const otherMaxX = otherKnot.x + otherBounds.maxX;
-                        const otherMinY = otherKnot.y + otherBounds.minY;
-                        const otherMaxY = otherKnot.y + otherBounds.maxY;
-
-                        // Check if current knot (itself roughly a box) overlaps with otherKnot's bounds
-                        const myMinX = knotNode.x - KNOT_HALF_WIDTH;
-                        const myMaxX = knotNode.x + KNOT_HALF_WIDTH;
-                        const myMinY = knotNode.y - KNOT_HALF_HEIGHT;
-                        const myMaxY = knotNode.y + KNOT_HALF_HEIGHT;
-
-                        // Collision check (AABB)
-                        // Add some padding/margin for spacing (20px)
-                        const MARGIN = 100;
-                        const overlapsX = (myMinX < otherMaxX + MARGIN) && (myMaxX > otherMinX - MARGIN);
-                        const overlapsY = (myMinY < otherMaxY + MARGIN) && (myMaxY > otherMinY - MARGIN);
-
-                        if (overlapsX && overlapsY) {
-                            // Collision detected!
-                            hasConflict = true;
-                            // Move current knot below the other knot's entire bounds
-                            knotNode.y = otherMaxY + KNOT_HALF_HEIGHT + MARGIN + 20;
-                            break;
-                        }
-                    }
-                    if (hasConflict) break;
-                }
-                offsetAttempts++;
-            }
-
-            // Update stitch positions based on adjusted knot position
-            const stitches = knotGroups.get(knotNode.id) || [];
-            if (stitches.length > 0 && knotNode.y) {
-                const originalBaseY = (knotNode as any).originalBaseY || knotNode.y;
-                const yAdjustment = knotNode.y - originalBaseY;
-
-                // Only adjust if the knot was moved
-                if (yAdjustment !== 0) {
-                    stitches.forEach(stitch => {
-                        if (stitch.y !== undefined) {
-                            stitch.y += yAdjustment;
+                const parents = reverseAdjacency.get(island.id);
+                if (parents && parents.size > 0) {
+                    let sumY = 0;
+                    let count = 0;
+                    parents.forEach(pid => {
+                        const parent = islandMap.get(pid);
+                        // Use parent's center
+                        if (parent && parent.rank < r) {
+                            sumY += parent.y + (parent.height / 2);
+                            count++;
                         }
                     });
+                    // Ideal Y is the center point we want to be at.
+                    // So we want: y + height/2 = average_parent_center
+                    // y = average_parent_center - height/2
+                    idealY = (count > 0) ? (sumY / count) - (island.height / 2) : 0;
+                } else {
+                    // No parents? 
+                    idealY = 0;
                 }
             }
+            islandIdealY.set(island.id, idealY);
         });
-    });
 
-    // Shift disconnected components below the connected graph so they don't
-    // visually overlap with any edges in the connected graph
-    let maxConnectedY = -Infinity;
-    graph.nodes.forEach(n => {
-        const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
-        if (connectedKnotIds.has(knotId) && n.y !== undefined) {
-            maxConnectedY = Math.max(maxConnectedY, n.y);
-        }
-    });
-
-    if (maxConnectedY > -Infinity) {
-        let minDisconnectedY = Infinity;
-        graph.nodes.forEach(n => {
-            const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
-            if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
-                minDisconnectedY = Math.min(minDisconnectedY, n.y);
+        // Sort by Ideal Y
+        rankIslands.sort((a, b) => {
+            const yA = islandIdealY.get(a.id) || 0;
+            const yB = islandIdealY.get(b.id) || 0;
+            if (Math.abs(yA - yB) < 1) {
+                return a.id.localeCompare(b.id);
             }
+            return yA - yB;
         });
 
-        if (minDisconnectedY < Infinity) {
-            const verticalGap = 300;
-            const yShift = maxConnectedY - minDisconnectedY + verticalGap;
-            graph.nodes.forEach(n => {
-                const knotId = (n.type === 'knot' || n.type === 'root') ? n.id : n.knotName || '';
-                if (!connectedKnotIds.has(knotId) && n.y !== undefined) {
-                    n.y += yShift;
-                }
-            });
-        }
+        // Assign Coordinates (Scan Line / Push Down)
+        // Tracks the bottom of the previous item in this rank
+        let currentY = -Infinity;
+
+        if (r === 0) currentY = 0;
+
+        rankIslands.forEach(island => {
+            let desired = islandIdealY.get(island.id) || 0;
+
+            if (currentY === -Infinity) {
+                // First item in rank, just take desired (clamped to 0?)
+                island.y = Math.max(0, desired);
+            } else {
+                // Must be below previous item
+                island.y = Math.max(desired, currentY + ISLAND_SPACING_Y);
+            }
+
+            island.x = currentX;
+            currentY = island.y + island.height;
+        });
+
+        currentX += rankMaxWidth + ISLAND_SPACING_X;
     }
+}
+
+function applyPositionsToNodes(islands: Island[]) {
+    islands.forEach(island => {
+        // Apply Island Offset to Knot Node
+        island.knotNode.x = island.x + island.knotNode.x!;
+        island.knotNode.y = island.y + island.knotNode.y!;
+
+        // Apply Island Offset to Stitches
+        island.stitches.forEach(stitch => {
+            stitch.x = island.x + stitch.x!;
+            stitch.y = island.y + stitch.y!;
+        });
+    });
 }
 
 export interface GraphOptions {
@@ -695,4 +616,3 @@ export interface GraphController {
     highlightCurrentNode(nodeId: string | null, visited?: Map<string, number>): void;
     centreOnNode(nodeId: string): void;
 }
-

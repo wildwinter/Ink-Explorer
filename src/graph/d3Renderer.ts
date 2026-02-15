@@ -6,7 +6,7 @@ import * as d3 from 'd3';
 import type { StoryStructure } from '../ink/analyzer.js';
 import {
     structureToGraph,
-    computeHierarchicalPositions,
+    computeStrictLayout,
     type GraphNode,
     type NodeType,
     type GraphOptions,
@@ -24,8 +24,11 @@ function getNodeFill(type: NodeType): string {
     return cssVar('--graph-knot-fill');
 }
 
-const getNodeDimensions = (_node: GraphNode) => {
-    return { width: 100, height: 50 };
+const getNodeDimensions = (node: GraphNode) => {
+    return {
+        width: node.width || 180,
+        height: node.height || 60
+    };
 };
 
 function splitLabelParts(label: string): string[] {
@@ -193,7 +196,7 @@ export function createGraphVisualization(
         return null;
     }
 
-    const height = container.clientHeight;
+
 
     const svg = d3.select(`#${containerId}`)
         .append('svg')
@@ -231,10 +234,10 @@ export function createGraphVisualization(
 
     const currentHighlight = g.insert('rect', '.links')
         .attr('class', 'current-highlight')
-        .attr('width', 116)
-        .attr('height', 66)
-        .attr('x', -58)
-        .attr('y', -33)
+        .attr('width', 196)
+        .attr('height', 76)
+        .attr('x', -98)
+        .attr('y', -38)
         .attr('rx', 12)
         .attr('ry', 12)
         .attr('fill', cssVar('--graph-current-arrow'))
@@ -242,7 +245,6 @@ export function createGraphVisualization(
         .style('display', 'none');
     let currentHighlightedNodeId: string | null = null;
 
-    let simulation: d3.Simulation<d3.SimulationNodeDatum, undefined>;
     let link: d3.Selection<SVGLineElement, any, SVGGElement, unknown>;
     let node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>;
     let selectedNodeId: string | null = null;
@@ -323,7 +325,7 @@ export function createGraphVisualization(
             return visibleNodeIds.has((s as GraphNode).id) || visibleNodeIds.has((t as GraphNode).id);
         });
 
-        // 1. Links Join
+        // Links Join
         link = linksLayer
             .selectAll<SVGLineElement, any>('line')
             .data(visibleLinks, (d: any) => {
@@ -351,7 +353,7 @@ export function createGraphVisualization(
                 .attr('y2', endpoints.y2);
         });
 
-        // 2. Nodes Join
+        // Nodes Join
         node = nodesLayer
             .selectAll<SVGGElement, GraphNode>('g')
             .data(visibleNodes, (d: GraphNode) => d.id);
@@ -367,10 +369,10 @@ export function createGraphVisualization(
 
         nodeEnter.append('rect')
             .attr('class', 'node-rect')
-            .attr('width', 100)
-            .attr('height', 50)
-            .attr('x', -50)
-            .attr('y', -25)
+            .attr('width', 180)
+            .attr('height', 60)
+            .attr('x', -90)
+            .attr('y', -30)
             .attr('rx', 8)
             .attr('ry', 8);
 
@@ -382,7 +384,7 @@ export function createGraphVisualization(
             .style('pointer-events', 'none')
             .style('user-select', 'none')
             .each(function (d) {
-                wrapLabel(this, d.label, 90);
+                wrapLabel(this, d.label, 160);
             });
 
         nodeEnter.append('title')
@@ -403,7 +405,7 @@ export function createGraphVisualization(
             .classed('selected', d => d.id === selectedNodeId);
 
 
-        // 3. Update Highlights (Current & Visited)
+        // Update Highlights (Current & Visited)
         if (currentHighlightedNodeId && visibleNodeIds.has(currentHighlightedNodeId)) {
             const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
             if (hn) {
@@ -433,10 +435,10 @@ export function createGraphVisualization(
 
         visitedSelection.enter()
             .append('rect')
-            .attr('width', 116)
-            .attr('height', 66)
-            .attr('x', -58)
-            .attr('y', -33)
+            .attr('width', 196)
+            .attr('height', 76)
+            .attr('x', -98)
+            .attr('y', -38)
             .attr('rx', 12)
             .attr('ry', 12)
             .attr('class', 'visited-highlight-rect')
@@ -449,157 +451,20 @@ export function createGraphVisualization(
     }
 
     function updateVisualization() {
-        const knotGroups = new Map<string, GraphNode[]>();
+        // Compute layout strictly
+        computeStrictLayout(graph);
 
-        graph.nodes.forEach(n => {
-            if (n.type === 'knot') {
-                knotGroups.set(n.id, []);
-            }
-        });
-
-        graph.nodes.forEach(n => {
-            if (n.type === 'stitch' && n.knotName) {
-                const stitches = knotGroups.get(n.knotName);
-                if (stitches) {
-                    stitches.push(n);
-                }
-            }
-        });
-
-        knotGroups.forEach((stitches, knotId) => {
-            const knotInStructure = structure.knots.find(k => k.name === knotId);
-            if (knotInStructure) {
-                stitches.sort((a, b) => {
-                    const aIndex = knotInStructure.stitches.findIndex(s => `${knotId}.${s.name}` === a.id);
-                    const bIndex = knotInStructure.stitches.findIndex(s => `${knotId}.${s.name}` === b.id);
-                    return aIndex - bIndex;
-                });
-            }
-        });
-
-        const needsLayout = !graph.nodes.every(n => n.type === 'stitch' || (n.x !== undefined && n.y !== undefined));
-        if (needsLayout) {
-            computeHierarchicalPositions(graph, knotGroups, height);
-
-            if (options?.initialTransform) {
-                const t = options.initialTransform;
-                const transform = d3.zoomIdentity.translate(t.x, t.y).scale(t.k);
-                // The zoom event listener will trigger renderVisibleElements via the 'zoom' event
-                // But we generally want to call it immediately too if zoom doesn't emit immediately?
-                // Actually d3 zoom emit events synchronously on call.
-                svg.call(zoom.transform as any, transform);
-            } else {
-                // Determine initial fit, then apply it
-                // We'll calculate the fit transform ourselves and apply it
-                // zoomToFit will eventually call svg.call(zoom.transform...), which triggers render
-            }
+        // Apply initial transform or zoom to fit if needed
+        if (options?.initialTransform) {
+            const t = options.initialTransform;
+            const transform = d3.zoomIdentity.translate(t.x, t.y).scale(t.k);
+            svg.call(zoom.transform as any, transform);
+        } else {
+            zoomToFit();
         }
 
-        if (simulation) {
-            simulation.stop();
-        }
-
-        // Show loading overlay
-        const loadingOverlay = document.createElement('div');
-        loadingOverlay.className = 'graph-loading-overlay';
-        loadingOverlay.innerHTML = `
-            <div class="graph-loader"></div>
-            <div class="graph-loading-text">Arranging knots...</div>
-        `;
-        if (container) {
-            container.appendChild(loadingOverlay);
-        }
-
-        // Force a layout reflow to ensure the overlay is rendered
-        loadingOverlay.getBoundingClientRect();
-
-        // Defer heavy work to allow browser to render loader
-        setTimeout(() => {
-            graph.nodes.forEach(n => {
-                (n as any).targetX = n.x;
-                (n as any).targetY = n.y;
-            });
-
-            simulation = d3.forceSimulation(graph.nodes as any)
-                .force('link', d3.forceLink(graph.links as any)
-                    .id((d: any) => d.id)
-                    .distance((d: any) => {
-                        // Adaptive distance:
-                        // Internal links (same knot) -> Short
-                        // External links (different knots) -> Long
-                        const source = d.source as any;
-                        const target = d.target as any;
-                        const sourceKnot = source.type === 'knot' ? source.id : source.knotName;
-                        const targetKnot = target.type === 'knot' ? target.id : target.knotName;
-
-                        if (sourceKnot && targetKnot && sourceKnot === targetKnot) {
-                            return 50; // Internal spacing
-                        }
-                        return 300; // External spacing
-                    })
-                    .strength((d: any) => {
-                        // Adaptive strength:
-                        // Internal links -> Strong (keep island together)
-                        // External links -> Weak (allow islands to drift)
-                        const source = d.source as any;
-                        const target = d.target as any;
-                        const sourceKnot = source.type === 'knot' ? source.id : source.knotName;
-                        const targetKnot = target.type === 'knot' ? target.id : target.knotName;
-
-                        if (sourceKnot && targetKnot && sourceKnot === targetKnot) {
-                            return 0.5;
-                        }
-                        return 0.05;
-                    }))
-                .force('charge', d3.forceManyBody().strength(-300)) // Repulsion to separate islands
-                .force('collision', d3.forceCollide<any>()
-                    .radius(60)
-                    .strength(0.7)
-                    .iterations(3))
-                .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.05))
-                .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.05))
-                .force('group', (alpha) => {
-                    // Custom force to pull stitches towards their knot
-                    const strength = 0.5 * alpha;
-                    graph.nodes.forEach((d: any) => {
-                        if (d.type === 'stitch' && d.knotName) {
-                            const knot = graph.nodes.find(n => n.id === d.knotName);
-                            if (knot) {
-                                const kx = (knot as any).x || 0;
-                                const ky = (knot as any).y || 0;
-                                d.vx += (kx - d.x) * strength;
-                                d.vy += (ky - d.y) * strength;
-                            }
-                        }
-                    });
-                })
-                .stop(); // Stop immediately, don't auto-start
-
-            // PRE-WARM: Run simulation synchronously
-            const NUM_TICKS = 300; // Increased ticks to allow settling with weaker forces
-            for (let i = 0; i < NUM_TICKS; ++i) {
-                simulation.tick();
-            }
-
-            // Ensure we are fit if no initial transform
-            if (needsLayout && !options?.initialTransform) {
-                zoomToFit();
-            } else {
-                renderVisibleElements();
-            }
-
-            minimap?.updatePositions();
-
-            // Fade out loading overlay
-            loadingOverlay.classList.add('fade-out');
-            setTimeout(() => {
-                if (loadingOverlay.parentNode) {
-                    loadingOverlay.parentNode.removeChild(loadingOverlay);
-                }
-            }, 300);
-
-        }, 50); // Small delay to allow UI to update
-
+        renderVisibleElements();
+        minimap?.updatePositions();
     }
 
     // Zoom behavior

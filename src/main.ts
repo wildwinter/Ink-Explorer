@@ -194,11 +194,6 @@ function createWindow(): void {
     ? path.join(process.cwd(), 'dist-electron', 'preload.js')
     : path.join(__dirname, 'preload.js');
 
-  console.log('CWD:', process.cwd());
-  console.log('__dirname:', __dirname);
-  console.log('Preload path:', preloadPath);
-  console.log('Preload exists:', fs.existsSync(preloadPath));
-
   const savedBounds = loadWindowBounds();
 
   mainWindow = new BrowserWindow({
