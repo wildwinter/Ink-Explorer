@@ -337,127 +337,152 @@ export function createGraphVisualization(
             simulation.stop();
         }
 
-        renderPositions = () => {
-            link.each(function (d: any) {
-                const endpoints = computeLinkEndpoints(d, graph.nodes);
-                const el = d3.select(this);
-                el.attr('x1', endpoints.x1)
-                    .attr('y1', endpoints.y1)
-                    .attr('x2', endpoints.x2)
-                    .attr('y2', endpoints.y2);
-            });
-
-            node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-
-            if (currentHighlightedNodeId) {
-                const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
-                if (hn) {
-                    currentHighlight.attr('transform', `translate(${hn.x || 0},${hn.y || 0})`);
-                }
-            }
-
-            visitedHighlightsGroup.selectAll<SVGRectElement, { id: string }>('rect')
-                .attr('transform', d => {
-                    const n = graph.nodes.find(n => n.id === d.id);
-                    return n ? `translate(${n.x || 0},${n.y || 0})` : '';
-                });
-        };
-
-        graph.nodes.forEach(n => {
-            (n as any).targetX = n.x;
-            (n as any).targetY = n.y;
-        });
-
-        simulation = d3.forceSimulation(graph.nodes as any)
-            .force('link', d3.forceLink(graph.links as any)
-                .id((d: any) => d.id)
-                .distance(150)
-                .strength(0.01))
-            .force('collision', d3.forceCollide<any>()
-                .radius(40)
-                .strength(0.2)
-                .iterations(1)) // Reduced iterations for performance
-            .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.8))
-            .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.8))
-            .stop(); // Stop immediately, don't auto-start
-
-        link = linksLayer
-            .selectAll<SVGLineElement, any>('line')
-            .data(graph.links, (d: any) => {
-                const sourceId = typeof d.source === 'string' ? d.source : (d.source as any).id;
-                const targetId = typeof d.target === 'string' ? d.target : (d.target as any).id;
-                return `${sourceId}-${targetId}`;
-            })
-            .join('line')
-            .attr('class', 'graph-link') // Use CSS class
-            .attr('marker-end', 'url(#arrow)');
-
-        node = nodesLayer
-            .selectAll<SVGGElement, GraphNode>('g')
-            .data(graph.nodes, (d: GraphNode) => d.id)
-            .join(
-                enter => {
-                    const nodeEnter = enter.append('g')
-                        .attr('class', d => getNodeClass(d.type)) // Use CSS classes
-                        .on('click', (event, d) => {
-                            event.stopPropagation();
-                            selectNode(d.id);
-                        });
-
-                    nodeEnter.append('rect')
-                        .attr('class', 'node-rect')
-                        .attr('width', 100)
-                        .attr('height', 50)
-                        .attr('x', -50)
-                        .attr('y', -25)
-                        .attr('rx', 8)
-                        .attr('ry', 8);
-                    // fill and stroke now handled by CSS
-
-                    nodeEnter.append('text')
-                        .attr('class', 'node-label')
-                        .attr('x', 0)
-                        .attr('y', 5)
-                        .attr('text-anchor', 'middle')
-                        .attr('font-size', '12px')
-                        // fill and weight now handled by CSS
-                        .style('pointer-events', 'none')
-                        .style('user-select', 'none')
-                        .each(function (d) {
-                            wrapLabel(this, d.label, 90);
-                        });
-
-                    nodeEnter.append('title')
-                        .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
-
-                    if (onNodeTest) {
-                        nodeEnter.on('contextmenu', (event: MouseEvent, d: GraphNode) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            showContextMenu(event.clientX, event.clientY, d);
-                        });
-                    }
-
-                    return nodeEnter;
-                },
-                update => update,
-                exit => exit.remove()
-            );
-
-        // PRE-WARM: Run simulation synchronously
-        // This avoids the visual "wiggle" and saves CPU on the main thread after load
-        const NUM_TICKS = 150;
-        for (let i = 0; i < NUM_TICKS; ++i) {
-            simulation.tick();
+        // Show loading overlay
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'graph-loading-overlay';
+        loadingOverlay.innerHTML = `
+            <div class="graph-loader"></div>
+            <div class="graph-loading-text">Arranging knots...</div>
+        `;
+        // container is checked for null at start of function, but TS might need reassurance or it's inside a callback?
+        // Actually this is main scope.
+        if (container) {
+            container.appendChild(loadingOverlay);
         }
 
-        // Render once after pre-warming
-        renderPositions();
-        minimap?.updatePositions();
+        // Force a layout reflow to ensure the overlay is rendered
+        loadingOverlay.getBoundingClientRect();
 
-        // Only restart if we REALLY need to (e.g. on drag), but generally we can leave it static.
-        // We do NOT attach an 'on.tick' listener here to avoid continuous rendering loop.
-        // If we want dynamic updates on drag, we'll re-enable it in drag events.
+        // Defer heavy work to allow browser to render loader
+        setTimeout(() => {
+            renderPositions = () => {
+                link.each(function (d: any) {
+                    const endpoints = computeLinkEndpoints(d, graph.nodes);
+                    const el = d3.select(this);
+                    el.attr('x1', endpoints.x1)
+                        .attr('y1', endpoints.y1)
+                        .attr('x2', endpoints.x2)
+                        .attr('y2', endpoints.y2);
+                });
+
+                node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+
+                if (currentHighlightedNodeId) {
+                    const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
+                    if (hn) {
+                        currentHighlight.attr('transform', `translate(${hn.x || 0},${hn.y || 0})`);
+                    }
+                }
+
+                visitedHighlightsGroup.selectAll<SVGRectElement, { id: string }>('rect')
+                    .attr('transform', d => {
+                        const n = graph.nodes.find(n => n.id === d.id);
+                        return n ? `translate(${n.x || 0},${n.y || 0})` : '';
+                    });
+            };
+
+            graph.nodes.forEach(n => {
+                (n as any).targetX = n.x;
+                (n as any).targetY = n.y;
+            });
+
+            simulation = d3.forceSimulation(graph.nodes as any)
+                .force('link', d3.forceLink(graph.links as any)
+                    .id((d: any) => d.id)
+                    .distance(150)
+                    .strength(0.01))
+                .force('collision', d3.forceCollide<any>()
+                    .radius(40)
+                    .strength(0.2)
+                    .iterations(1)) // Reduced iterations for performance
+                .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.8))
+                .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.8))
+                .stop(); // Stop immediately, don't auto-start
+
+            link = linksLayer
+                .selectAll<SVGLineElement, any>('line')
+                .data(graph.links, (d: any) => {
+                    const sourceId = typeof d.source === 'string' ? d.source : (d.source as any).id;
+                    const targetId = typeof d.target === 'string' ? d.target : (d.target as any).id;
+                    return `${sourceId}-${targetId}`;
+                })
+                .join('line')
+                .attr('class', 'graph-link') // Use CSS class
+                .attr('marker-end', 'url(#arrow)');
+
+            node = nodesLayer
+                .selectAll<SVGGElement, GraphNode>('g')
+                .data(graph.nodes, (d: GraphNode) => d.id)
+                .join(
+                    enter => {
+                        const nodeEnter = enter.append('g')
+                            .attr('class', d => getNodeClass(d.type)) // Use CSS classes
+                            .on('click', (event, d) => {
+                                event.stopPropagation();
+                                selectNode(d.id);
+                            });
+
+                        nodeEnter.append('rect')
+                            .attr('class', 'node-rect')
+                            .attr('width', 100)
+                            .attr('height', 50)
+                            .attr('x', -50)
+                            .attr('y', -25)
+                            .attr('rx', 8)
+                            .attr('ry', 8);
+                        // fill and stroke now handled by CSS
+
+                        nodeEnter.append('text')
+                            .attr('class', 'node-label')
+                            .attr('x', 0)
+                            .attr('y', 5)
+                            .attr('text-anchor', 'middle')
+                            .attr('font-size', '12px')
+                            // fill and weight now handled by CSS
+                            .style('pointer-events', 'none')
+                            .style('user-select', 'none')
+                            .each(function (d) {
+                                wrapLabel(this, d.label, 90);
+                            });
+
+                        nodeEnter.append('title')
+                            .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
+
+                        if (onNodeTest) {
+                            nodeEnter.on('contextmenu', (event: MouseEvent, d: GraphNode) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                showContextMenu(event.clientX, event.clientY, d);
+                            });
+                        }
+
+                        return nodeEnter;
+                    },
+                    update => update,
+                    exit => exit.remove()
+                );
+
+            // PRE-WARM: Run simulation synchronously
+            // This avoids the visual "wiggle" and saves CPU on the main thread after load
+            const NUM_TICKS = 150;
+            for (let i = 0; i < NUM_TICKS; ++i) {
+                simulation.tick();
+            }
+
+            // Render once after pre-warming
+            renderPositions();
+            minimap?.updatePositions();
+
+            // Fade out loading overlay
+            loadingOverlay.classList.add('fade-out');
+            setTimeout(() => {
+                if (loadingOverlay.parentNode) {
+                    loadingOverlay.parentNode.removeChild(loadingOverlay);
+                }
+            }, 300);
+
+        }, 50); // Small delay to allow UI to update
+
     }
 
     // Drag handling removed as per user request

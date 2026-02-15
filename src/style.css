@@ -1014,9 +1014,17 @@ body {
   transition: stroke 0.1s, stroke-width 0.1s;
 }
 
-.node-group.node-root .node-rect { fill: var(--graph-root-fill); }
-.node-group.node-knot .node-rect { fill: var(--graph-knot-fill); }
-.node-group.node-stitch .node-rect { fill: var(--graph-stitch-fill); }
+.node-group.node-root .node-rect {
+  fill: var(--graph-root-fill);
+}
+
+.node-group.node-knot .node-rect {
+  fill: var(--graph-knot-fill);
+}
+
+.node-group.node-stitch .node-rect {
+  fill: var(--graph-stitch-fill);
+}
 
 .node-group.selected .node-rect {
   stroke: var(--graph-selected-stroke);
@@ -1047,4 +1055,54 @@ body {
   fill: var(--graph-current-arrow);
   stroke: none;
   pointer-events: none;
+}
+
+/* Loading Overlay */
+.graph-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.graph-loading-overlay.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.graph-loader {
+  width: 48px;
+  height: 48px;
+  border: 5px solid var(--border-primary);
+  border-bottom-color: var(--accent-blue);
+  border-radius: 50%;
+  display: inline-block;
+  box-sizing: border-box;
+  animation: rotation 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+.graph-loading-text {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
