@@ -1,6 +1,6 @@
 /**
  * Minimap for the graph visualization.
- * Renders a small overview of the full graph with a viewport indicator.
+ * Renders a small overview of the full graph with a viewport indicator using Canvas.
  */
 
 import * as d3 from 'd3';
@@ -40,41 +40,39 @@ export function createMinimap(
     minimapDiv.className = 'minimap';
     container.appendChild(minimapDiv);
 
-    const minimapSvg = d3.select(minimapDiv)
-        .append('svg')
-        .attr('width', MINIMAP_WIDTH)
-        .attr('height', MINIMAP_HEIGHT);
+    // Create Canvas
+    const canvas = document.createElement('canvas');
+    // Handle High DPI displays
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = MINIMAP_WIDTH * dpr;
+    canvas.height = MINIMAP_HEIGHT * dpr;
+    canvas.style.width = `${MINIMAP_WIDTH}px`;
+    canvas.style.height = `${MINIMAP_HEIGHT}px`;
 
-    minimapSvg.append('rect')
-        .attr('width', MINIMAP_WIDTH)
-        .attr('height', MINIMAP_HEIGHT)
-        .attr('fill', cssVar('--graph-minimap-bg'))
-        .attr('stroke', cssVar('--graph-minimap-stroke'))
-        .attr('stroke-width', 1)
-        .attr('rx', 4);
+    minimapDiv.appendChild(canvas);
 
-    const minimapG = minimapSvg.append('g');
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(dpr, dpr);
 
-    const minimapLinkSel = minimapG.selectAll<SVGLineElement, any>('line')
-        .data(graph.links)
-        .join('line')
-        .attr('stroke', cssVar('--graph-minimap-link'))
-        .attr('stroke-width', 0.5);
+    // Track state for rendering
+    let currentHighlightedId: string | null = null;
+    let currentVisitedMap: Map<string, number> = new Map();
 
-    const minimapNodeSel = minimapG.selectAll<SVGRectElement, GraphNode>('rect.mm-node')
-        .data(graph.nodes)
-        .join('rect')
-        .attr('class', 'mm-node')
-        .attr('width', 8)
-        .attr('height', 4)
-        .attr('rx', 1)
-        .attr('fill', d => getNodeFill(d.type));
+    // Mutable references to functions so they can be updated
+    let currentCssVar = cssVar;
+    let currentGetNodeFill = getNodeFill;
 
-    const viewportRect = minimapSvg.append('rect')
-        .attr('fill', cssVar('--graph-minimap-viewport-fill'))
-        .attr('stroke', cssVar('--graph-minimap-viewport-stroke'))
-        .attr('stroke-width', 1)
-        .style('pointer-events', 'none');
+    // Helper to get fresh colors
+    const getColors = () => ({
+        bg: currentCssVar('--graph-minimap-bg'),
+        stroke: currentCssVar('--graph-minimap-stroke'),
+        link: currentCssVar('--graph-minimap-link'),
+        viewportFill: currentCssVar('--graph-minimap-viewport-fill'),
+        viewportStroke: currentCssVar('--graph-minimap-viewport-stroke'),
+        highlight: currentCssVar('--graph-current-arrow')
+    });
+
+    let currentColors = getColors();
 
     function computeMapping() {
         let minX = Infinity, maxX = -Infinity;
@@ -100,8 +98,103 @@ export function createMinimap(
         return { scale: s, offsetX: ox, offsetY: oy };
     }
 
+    function render() {
+        ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+
+        // 1. Background
+        ctx.fillStyle = currentColors.bg;
+        ctx.strokeStyle = currentColors.stroke;
+        ctx.lineWidth = 1;
+
+        // Rounded rect background
+        const r = 4;
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(MINIMAP_WIDTH - r, 0);
+        ctx.quadraticCurveTo(MINIMAP_WIDTH, 0, MINIMAP_WIDTH, r);
+        ctx.lineTo(MINIMAP_WIDTH, MINIMAP_HEIGHT - r);
+        ctx.quadraticCurveTo(MINIMAP_WIDTH, MINIMAP_HEIGHT, MINIMAP_WIDTH - r, MINIMAP_HEIGHT);
+        ctx.lineTo(r, MINIMAP_HEIGHT);
+        ctx.quadraticCurveTo(0, MINIMAP_HEIGHT, 0, MINIMAP_HEIGHT - r);
+        ctx.lineTo(0, r);
+        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        const mm = computeMapping();
+
+        // 2. Links
+        ctx.strokeStyle = currentColors.link;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        graph.links.forEach(link => {
+            const s = typeof link.source === 'object' ? link.source : graph.nodes.find(n => n.id === link.source);
+            const t = typeof link.target === 'object' ? link.target : graph.nodes.find(n => n.id === link.target);
+
+            if (s && t && s.x !== undefined && s.y !== undefined && t.x !== undefined && t.y !== undefined) {
+                const x1 = s.x * mm.scale + mm.offsetX;
+                const y1 = s.y * mm.scale + mm.offsetY;
+                const x2 = t.x * mm.scale + mm.offsetX;
+                const y2 = t.y * mm.scale + mm.offsetY;
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+            }
+        });
+        ctx.stroke();
+
+        // 3. Nodes
+        graph.nodes.forEach(node => {
+            if (node.x === undefined || node.y === undefined) return;
+
+            const x = node.x * mm.scale + mm.offsetX - 4; // Center horizontally (width 8)
+            const y = node.y * mm.scale + mm.offsetY - 2; // Center vertically (height 4)
+
+            ctx.fillStyle = computeNodeFill(node, currentCssVar, currentGetNodeFill, currentHighlightedId, currentVisitedMap);
+
+            // Draw rounded rect for node (8x4, radius 1)
+            const w = 8;
+            const h = 4;
+            const nr = 1;
+
+            ctx.beginPath();
+            ctx.moveTo(x + nr, y);
+            ctx.lineTo(x + w - nr, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + nr);
+            ctx.lineTo(x + w, y + h - nr);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - nr, y + h);
+            ctx.lineTo(x + nr, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - nr);
+            ctx.lineTo(x, y + nr);
+            ctx.quadraticCurveTo(x, y, x + nr, y);
+            ctx.fill();
+        });
+
+        // 4. Viewport Rect
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        // @ts-ignore
+        const t = d3.zoomTransform(svg.node()!);
+
+        const visLeft = -t.x / t.k;
+        const visTop = -t.y / t.k;
+        const visWidth = cw / t.k;
+        const visHeight = ch / t.k;
+
+        const vx = visLeft * mm.scale + mm.offsetX;
+        const vy = visTop * mm.scale + mm.offsetY;
+        const vw = visWidth * mm.scale;
+        const vh = visHeight * mm.scale;
+
+        ctx.fillStyle = currentColors.viewportFill;
+        ctx.strokeStyle = currentColors.viewportStroke;
+        ctx.lineWidth = 1;
+        ctx.fillRect(vx, vy, vw, vh);
+        ctx.strokeRect(vx, vy, vw, vh);
+    }
+
     function navigateFromMinimap(event: any) {
-        const [mx, my] = d3.pointer(event, minimapSvg.node());
+        const [mx, my] = d3.pointer(event, canvas); // get pointer relative to canvas
         const mm = computeMapping();
 
         const graphX = (mx - mm.offsetX) / mm.scale;
@@ -118,7 +211,7 @@ export function createMinimap(
         svg.call(zoom.transform as any, newTransform);
     }
 
-    minimapSvg.call(d3.drag<SVGSVGElement, unknown>()
+    d3.select(canvas).call(d3.drag<HTMLCanvasElement, unknown>()
         .on('start drag', navigateFromMinimap) as any);
 
     function computeNodeFill(
@@ -140,55 +233,18 @@ export function createMinimap(
 
     return {
         updatePositions() {
-            const mm = computeMapping();
-
-            minimapNodeSel
-                .attr('x', d => (d.x || 0) * mm.scale + mm.offsetX - 4)
-                .attr('y', d => (d.y || 0) * mm.scale + mm.offsetY - 2);
-
-            minimapLinkSel
-                .attr('x1', (d: any) => {
-                    const s = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
-                    return s ? (s.x || 0) * mm.scale + mm.offsetX : 0;
-                })
-                .attr('y1', (d: any) => {
-                    const s = typeof d.source === 'object' ? d.source : graph.nodes.find(n => n.id === d.source);
-                    return s ? (s.y || 0) * mm.scale + mm.offsetY : 0;
-                })
-                .attr('x2', (d: any) => {
-                    const t = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
-                    return t ? (t.x || 0) * mm.scale + mm.offsetX : 0;
-                })
-                .attr('y2', (d: any) => {
-                    const t = typeof d.target === 'object' ? d.target : graph.nodes.find(n => n.id === d.target);
-                    return t ? (t.y || 0) * mm.scale + mm.offsetY : 0;
-                });
+            render();
         },
         updateViewport() {
-            const mm = computeMapping();
-            const cw = container.clientWidth;
-            const ch = container.clientHeight;
-            // @ts-ignore
-            const t = d3.zoomTransform(svg.node()!);
-
-            const visLeft = -t.x / t.k;
-            const visTop = -t.y / t.k;
-            const visWidth = cw / t.k;
-            const visHeight = ch / t.k;
-
-            viewportRect
-                .attr('x', visLeft * mm.scale + mm.offsetX)
-                .attr('y', visTop * mm.scale + mm.offsetY)
-                .attr('width', visWidth * mm.scale)
-                .attr('height', visHeight * mm.scale);
+            render();
         },
         updateColors(cssVarFn, getNodeFillFn, currentHighlightedNodeId, visitedNodeMap) {
-            minimapSvg.select('rect').attr('fill', cssVarFn('--graph-minimap-bg'))
-                .attr('stroke', cssVarFn('--graph-minimap-stroke'));
-            minimapLinkSel.attr('stroke', cssVarFn('--graph-minimap-link'));
-            minimapNodeSel.attr('fill', d => computeNodeFill(d, cssVarFn, getNodeFillFn, currentHighlightedNodeId, visitedNodeMap));
-            viewportRect.attr('fill', cssVarFn('--graph-minimap-viewport-fill'))
-                .attr('stroke', cssVarFn('--graph-minimap-viewport-stroke'));
+            currentCssVar = cssVarFn;
+            currentGetNodeFill = getNodeFillFn;
+            currentColors = getColors();
+            currentHighlightedId = currentHighlightedNodeId;
+            currentVisitedMap = visitedNodeMap;
+            render();
         },
         getNodeFillForHighlight: computeNodeFill
     };
