@@ -1002,3 +1002,49 @@ body {
 .live-ink-tooltip.visible {
   opacity: 1;
 }
+
+/* Optimized Graph Node Styles */
+.node-group {
+  cursor: pointer;
+}
+
+.node-group .node-rect {
+  stroke-width: 2px;
+  stroke: var(--graph-node-stroke);
+  transition: stroke 0.1s, stroke-width 0.1s;
+}
+
+.node-group.node-root .node-rect { fill: var(--graph-root-fill); }
+.node-group.node-knot .node-rect { fill: var(--graph-knot-fill); }
+.node-group.node-stitch .node-rect { fill: var(--graph-stitch-fill); }
+
+.node-group.selected .node-rect {
+  stroke: var(--graph-selected-stroke);
+  stroke-width: 3px;
+}
+
+.node-group text {
+  fill: var(--graph-node-text);
+  pointer-events: none;
+  user-select: none;
+}
+
+.node-group.node-root text,
+.node-group.node-knot text {
+  font-weight: bold;
+}
+
+/* Graph Links */
+.graph-link {
+  stroke: var(--graph-link-stroke);
+  stroke-width: 2px;
+  stroke-opacity: 0.6;
+  fill: none;
+}
+
+/* Visited/Current Highlights */
+.visited-highlight-rect {
+  fill: var(--graph-current-arrow);
+  stroke: none;
+  pointer-events: none;
+}

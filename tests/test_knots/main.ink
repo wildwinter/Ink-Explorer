@@ -64,3 +64,15 @@ This is a fallback for external function, passed ({soundName})
 = WithFallback
 ~ ExFunctionTestWithFallback("Test")
 -> DONE
+
+== TestCycle
+{cycle: 
+- TestCycle1
+- TestCycle2
+- TestCycle3
+}
+-> DONE
+
+== TestOnce
+{once: This will only be shown once}
+-> DONE

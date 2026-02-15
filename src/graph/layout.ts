@@ -543,6 +543,34 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
     });
 
     // Post-process to fix overlapping knots and avoid stitches
+    // Pre-calculate relative bounds for all knots (including their stitches)
+    const knotBounds = new Map<string, { minX: number, maxX: number, minY: number, maxY: number }>();
+
+    const KNOT_HALF_WIDTH = 60;
+    const KNOT_HALF_HEIGHT = 30;
+
+    knots.forEach(k => {
+        let minX = -KNOT_HALF_WIDTH;
+        let maxX = KNOT_HALF_WIDTH;
+        let minY = -KNOT_HALF_HEIGHT;
+        let maxY = KNOT_HALF_HEIGHT;
+
+        const stitches = knotGroups.get(k.id) || [];
+        stitches.forEach(s => {
+            // Calculate relative position of stitch to knot
+            if (s.x !== undefined && s.y !== undefined && k.x !== undefined && k.y !== undefined) {
+                const dx = s.x - k.x;
+                const dy = s.y - k.y;
+                minX = Math.min(minX, dx - KNOT_HALF_WIDTH);
+                maxX = Math.max(maxX, dx + KNOT_HALF_WIDTH);
+                minY = Math.min(minY, dy - KNOT_HALF_HEIGHT);
+                maxY = Math.max(maxY, dy + KNOT_HALF_HEIGHT);
+            }
+        });
+
+        knotBounds.set(k.id, { minX, maxX, minY, maxY });
+    });
+
     // Iterate through knots by depth to check for conflicts
     sortedDepths.forEach(depth => {
         const knotsAtDepth = knotsByDepth.get(depth) || [];
@@ -550,7 +578,6 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
         knotsAtDepth.forEach(knotNode => {
             if (!knotNode.x || !knotNode.y) return;
 
-            // Check for conflicts with earlier knots and their stitches
             let hasConflict = true;
             let offsetAttempts = 0;
             const maxOffsetAttempts = 20;
@@ -558,78 +585,46 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
             while (hasConflict && offsetAttempts < maxOffsetAttempts) {
                 hasConflict = false;
 
-                // Check all knots at earlier depths (to the left)
-                for (let d = 0; d < depth; d++) {
-                    const earlierKnots = knotsByDepth.get(d) || [];
+                // Check knots at same depth and immediately previous depth
+                const startDepth = Math.max(0, depth - 1);
 
-                    for (const earlierKnot of earlierKnots) {
-                        if (!earlierKnot.x || !earlierKnot.y) continue;
+                for (let d = startDepth; d <= depth; d++) {
+                    const checkKnots = knotsByDepth.get(d) || [];
 
-                        // Check if current knot overlaps with earlier knot
-                        const xDist = Math.abs(knotNode.x - earlierKnot.x);
-                        const yDist = Math.abs(knotNode.y - earlierKnot.y);
+                    for (const otherKnot of checkKnots) {
+                        if (otherKnot === knotNode || !otherKnot.x || !otherKnot.y) continue;
 
-                        if (xDist < 120 && yDist < 60) {
-                            // Knots overlap, offset current knot vertically
+                        // Use pre-calculated bounds
+                        const otherBounds = knotBounds.get(otherKnot.id);
+                        if (!otherBounds) continue;
+
+                        const otherMinX = otherKnot.x + otherBounds.minX;
+                        const otherMaxX = otherKnot.x + otherBounds.maxX;
+                        const otherMinY = otherKnot.y + otherBounds.minY;
+                        const otherMaxY = otherKnot.y + otherBounds.maxY;
+
+                        // Check if current knot (itself roughly a box) overlaps with otherKnot's bounds
+                        const myMinX = knotNode.x - KNOT_HALF_WIDTH;
+                        const myMaxX = knotNode.x + KNOT_HALF_WIDTH;
+                        const myMinY = knotNode.y - KNOT_HALF_HEIGHT;
+                        const myMaxY = knotNode.y + KNOT_HALF_HEIGHT;
+
+                        // Collision check (AABB)
+                        // Add some padding/margin for spacing (20px)
+                        const MARGIN = 20;
+                        const overlapsX = (myMinX < otherMaxX + MARGIN) && (myMaxX > otherMinX - MARGIN);
+                        const overlapsY = (myMinY < otherMaxY + MARGIN) && (myMaxY > otherMinY - MARGIN);
+
+                        if (overlapsX && overlapsY) {
+                            // Collision detected!
                             hasConflict = true;
-                            knotNode.y += 80;
+                            // Move current knot below the other knot's entire bounds
+                            knotNode.y = otherMaxY + KNOT_HALF_HEIGHT + MARGIN + 20;
                             break;
                         }
-
-                        // Check if current knot overlaps with earlier knot's stitches
-                        const earlierStitches = knotGroups.get(earlierKnot.id) || [];
-                        if (earlierStitches.length > 0) {
-                            // Get bounds of earlier knot's stitches
-                            const stitchYs = earlierStitches.map(s => s.y || 0);
-                            const minStitchY = Math.min(...stitchYs, earlierKnot.y);
-                            const maxStitchY = Math.max(...stitchYs, earlierKnot.y);
-
-                            // Check if current knot is in the vertical range of the stitches
-                            if (xDist < 150 && knotNode.y >= minStitchY - 60 && knotNode.y <= maxStitchY + 60) {
-                                // Current knot is in range of earlier knot's stitches, offset it
-                                hasConflict = true;
-                                knotNode.y = maxStitchY + 80;
-                                break;
-                            }
-                        }
                     }
-
                     if (hasConflict) break;
                 }
-
-                // Also check knots at the same depth
-                for (const otherKnot of knotsAtDepth) {
-                    if (otherKnot === knotNode || !otherKnot.x || !otherKnot.y) continue;
-
-                    const xDist = Math.abs(knotNode.x - otherKnot.x);
-                    const yDist = Math.abs(knotNode.y - otherKnot.y);
-
-                    // Check if current knot overlaps with other knot
-                    if (xDist < 120 && yDist < 60) {
-                        // Same position, offset vertically with larger spacing
-                        hasConflict = true;
-                        knotNode.y += 150;
-                        break;
-                    }
-
-                    // Check if current knot overlaps with other knot's stitches
-                    const otherStitches = knotGroups.get(otherKnot.id) || [];
-                    if (otherStitches.length > 0) {
-                        // Get bounds of other knot's stitches
-                        const stitchYs = otherStitches.map(s => s.y || 0);
-                        const minStitchY = Math.min(...stitchYs, otherKnot.y);
-                        const maxStitchY = Math.max(...stitchYs, otherKnot.y);
-
-                        // Check if current knot is in the vertical range of the stitches
-                        if (xDist < 150 && knotNode.y >= minStitchY - 60 && knotNode.y <= maxStitchY + 60) {
-                            // Current knot is in range of other knot's stitches, offset it
-                            hasConflict = true;
-                            knotNode.y = maxStitchY + 80;
-                            break;
-                        }
-                    }
-                }
-
                 offsetAttempts++;
             }
 

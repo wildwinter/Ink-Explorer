@@ -215,6 +215,13 @@ export function createGraphVisualization(
         .attr('d', 'M0,-5L10,0L0,5')
         .attr('fill', cssVar('--graph-link-stroke'));
 
+    // Helper: Determine node class based on type
+    const getNodeClass = (type: NodeType): string => {
+        if (type === 'root') return 'node-group node-root';
+        if (type === 'stitch') return 'node-group node-stitch';
+        return 'node-group node-knot';
+    };
+
     const linksLayer = g.append('g').attr('class', 'links');
     const nodesLayer = g.append('g').attr('class', 'nodes');
 
@@ -331,13 +338,13 @@ export function createGraphVisualization(
         }
 
         renderPositions = () => {
-            link.each(function(d: any) {
+            link.each(function (d: any) {
                 const endpoints = computeLinkEndpoints(d, graph.nodes);
                 const el = d3.select(this);
                 el.attr('x1', endpoints.x1)
-                  .attr('y1', endpoints.y1)
-                  .attr('x2', endpoints.x2)
-                  .attr('y2', endpoints.y2);
+                    .attr('y1', endpoints.y1)
+                    .attr('x2', endpoints.x2)
+                    .attr('y2', endpoints.y2);
             });
 
             node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
@@ -369,11 +376,10 @@ export function createGraphVisualization(
             .force('collision', d3.forceCollide<any>()
                 .radius(40)
                 .strength(0.2)
-                .iterations(2))
-            .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9))
-            .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.9))
-            .alphaDecay(0.05)
-            .on('tick', () => { renderPositions(); minimap?.updatePositions(); });
+                .iterations(1)) // Reduced iterations for performance
+            .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.8))
+            .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.8))
+            .stop(); // Stop immediately, don't auto-start
 
         link = linksLayer
             .selectAll<SVGLineElement, any>('line')
@@ -383,9 +389,7 @@ export function createGraphVisualization(
                 return `${sourceId}-${targetId}`;
             })
             .join('line')
-            .attr('stroke', cssVar('--graph-link-stroke'))
-            .attr('stroke-width', 2)
-            .attr('stroke-opacity', 0.6)
+            .attr('class', 'graph-link') // Use CSS class
             .attr('marker-end', 'url(#arrow)');
 
         node = nodesLayer
@@ -394,11 +398,11 @@ export function createGraphVisualization(
             .join(
                 enter => {
                     const nodeEnter = enter.append('g')
-                        .attr('class', d => `node-${d.type}`)
-                        .call(d3.drag<any, any>()
-                            .on('start', dragStarted)
-                            .on('drag', dragged)
-                            .on('end', dragEnded));
+                        .attr('class', d => getNodeClass(d.type)) // Use CSS classes
+                        .on('click', (event, d) => {
+                            event.stopPropagation();
+                            selectNode(d.id);
+                        });
 
                     nodeEnter.append('rect')
                         .attr('class', 'node-rect')
@@ -407,23 +411,19 @@ export function createGraphVisualization(
                         .attr('x', -50)
                         .attr('y', -25)
                         .attr('rx', 8)
-                        .attr('ry', 8)
-                        .attr('fill', d => getNodeFill(d.type))
-                        .attr('stroke', cssVar('--graph-node-stroke'))
-                        .attr('stroke-width', 2)
-                        .style('cursor', 'pointer');
+                        .attr('ry', 8);
+                    // fill and stroke now handled by CSS
 
                     nodeEnter.append('text')
                         .attr('class', 'node-label')
                         .attr('x', 0)
                         .attr('y', 5)
                         .attr('text-anchor', 'middle')
-                        .attr('fill', cssVar('--graph-node-text'))
                         .attr('font-size', '12px')
-                        .attr('font-weight', d => (d.type === 'knot' || d.type === 'root') ? 'bold' : 'normal')
+                        // fill and weight now handled by CSS
                         .style('pointer-events', 'none')
                         .style('user-select', 'none')
-                        .each(function(d) {
+                        .each(function (d) {
                             wrapLabel(this, d.label, 90);
                         });
 
@@ -444,110 +444,24 @@ export function createGraphVisualization(
                 exit => exit.remove()
             );
 
+        // PRE-WARM: Run simulation synchronously
+        // This avoids the visual "wiggle" and saves CPU on the main thread after load
+        const NUM_TICKS = 150;
+        for (let i = 0; i < NUM_TICKS; ++i) {
+            simulation.tick();
+        }
+
+        // Render once after pre-warming
         renderPositions();
+        minimap?.updatePositions();
+
+        // Only restart if we REALLY need to (e.g. on drag), but generally we can leave it static.
+        // We do NOT attach an 'on.tick' listener here to avoid continuous rendering loop.
+        // If we want dynamic updates on drag, we'll re-enable it in drag events.
     }
 
-    // Drag handling
-    let dragStartX: number;
-    let dragStartY: number;
-    let wasDragged = false;
+    // Drag handling removed as per user request
 
-    function dragStarted(event: any) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        event.subject.fx = event.subject.x;
-        event.subject.fy = event.subject.y;
-        dragStartX = event.subject.x;
-        dragStartY = event.subject.y;
-        wasDragged = false;
-    }
-
-    const DRAG_THRESHOLD = 5;
-
-    function dragged(event: any) {
-        const dx = event.x - dragStartX;
-        const dy = event.y - dragStartY;
-        if (!wasDragged && Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
-        wasDragged = true;
-        event.subject.fx = event.x;
-        event.subject.fy = event.y;
-
-        if (event.subject.type === 'knot') {
-            const dx = event.x - dragStartX;
-            const dy = event.y - dragStartY;
-
-            graph.nodes.forEach(n => {
-                if (n.type === 'stitch' && n.knotName === event.subject.id) {
-                    if (n.x !== undefined && n.y !== undefined) {
-                        const originalX = (n as any).targetX || n.x;
-                        const originalY = (n as any).targetY || n.y;
-                        n.fx = originalX + dx;
-                        n.fy = originalY + dy;
-                    }
-                }
-            });
-        }
-    }
-
-    function dragEnded(event: any) {
-        if (!event.active) simulation.alphaTarget(0);
-
-        if (!wasDragged) {
-            event.subject.fx = null;
-            event.subject.fy = null;
-            event.subject.x = dragStartX;
-            event.subject.y = dragStartY;
-            simulation.alpha(0.1).restart();
-
-            if (options?.onNodeClick) {
-                nodesLayer.selectAll('.node-rect')
-                    .attr('stroke', cssVar('--graph-node-stroke'))
-                    .attr('stroke-width', 2);
-
-                nodesLayer.selectAll<SVGGElement, GraphNode>('g')
-                    .filter((d: GraphNode) => d.id === event.subject.id)
-                    .select('.node-rect')
-                    .attr('stroke', cssVar('--graph-selected-stroke'))
-                    .attr('stroke-width', 3);
-
-                selectedNodeId = event.subject.id;
-                options.onNodeClick(event.subject.id, event.subject.type, event.subject.knotName);
-            }
-            return;
-        }
-
-        const newX = event.subject.fx;
-        const newY = event.subject.fy;
-
-        event.subject.x = newX;
-        event.subject.y = newY;
-        event.subject.targetX = newX;
-        event.subject.targetY = newY;
-
-        if (event.subject.type === 'knot') {
-            const dx = newX - dragStartX;
-            const dy = newY - dragStartY;
-
-            graph.nodes.forEach(n => {
-                if (n.type === 'stitch' && n.knotName === event.subject.id) {
-                    const originalX = (n as any).targetX || n.x;
-                    const originalY = (n as any).targetY || n.y;
-                    n.x = originalX + dx;
-                    n.y = originalY + dy;
-                    (n as any).targetX = originalX + dx;
-                    (n as any).targetY = originalY + dy;
-                    n.fx = null;
-                    n.fy = null;
-                }
-            });
-        }
-
-        event.subject.fx = null;
-        event.subject.fy = null;
-
-        simulation.force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.9));
-        simulation.force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.9));
-        simulation.alpha(0.3).restart();
-    }
 
     // Zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -624,9 +538,13 @@ export function createGraphVisualization(
         .attr('rx', 5);
 
     legend.append('rect')
+        .attr('class', 'node-knot') // Use class to pick up fill
         .attr('x', -8).attr('y', -8).attr('width', 35).attr('height', 16)
         .attr('rx', 4).attr('ry', 4)
-        .attr('fill', cssVar('--graph-knot-fill'))
+        .attr('fill', cssVar('--graph-knot-fill')) // Keep explicit fill for legend if needed or rely on class?
+        // Legend rects don't have the same structure as graph nodes (.node-rect nested), so classes might not map 1:1 perfectly without adjustment.
+        // Let's keep explicit attributes for legend for safety, or wrap them.
+        // For simplicity in this tool call, I will leave legend as is but update updateColors to be minimal.
         .attr('stroke', cssVar('--graph-node-stroke')).attr('stroke-width', 1);
     legend.append('text')
         .attr('x', 35).attr('y', 5)
@@ -666,14 +584,13 @@ export function createGraphVisualization(
         const targetNode = graph.nodes.find(n => n.id === nodeId);
         if (!targetNode) return;
 
-        nodesLayer.selectAll('.node-rect')
-            .attr('stroke', cssVar('--graph-node-stroke'))
-            .attr('stroke-width', 2);
-        nodesLayer.selectAll<SVGGElement, GraphNode>('.node')
+        // Reset all
+        nodesLayer.selectAll('.node-group').classed('selected', false);
+
+        // Select specific
+        nodesLayer.selectAll<SVGGElement, GraphNode>('.node-group')
             .filter(d => d.id === nodeId)
-            .select('.node-rect')
-            .attr('stroke', cssVar('--graph-selected-stroke'))
-            .attr('stroke-width', 3);
+            .classed('selected', true);
 
         selectedNodeId = nodeId;
         if (onNodeClick) {
@@ -747,8 +664,7 @@ export function createGraphVisualization(
                 .attr('y', -33)
                 .attr('rx', 12)
                 .attr('ry', 12)
-                .attr('fill', cssVar('--graph-current-arrow'))
-                .attr('stroke', 'none')
+                .attr('class', 'visited-highlight-rect') // Use class
                 .merge(visitedSelection)
                 .attr('opacity', d => d.opacity)
                 .attr('transform', d => {
@@ -759,27 +675,16 @@ export function createGraphVisualization(
             minimap.updateColors(cssVar, getNodeFill, currentHighlightedNodeId, visitedNodeMap);
         },
         updateColors() {
+            // Simplified updateColors - most things handled by CSS vars now!
+            // We just need to update elements that might explicitly rely on JS-read vars if any.
+            // But with the new CSS classes, they bind directly to vars.
+            // The markers might need update if they are outside the shadow dom/scope? No, they are in defs.
+
             svg.select('defs marker path')
                 .attr('fill', cssVar('--graph-link-stroke'));
 
-            link.attr('stroke', cssVar('--graph-link-stroke'));
-
-            node.select('.node-rect')
-                .attr('fill', d => getNodeFill(d.type))
-                .attr('stroke', (d) => d.id === selectedNodeId ?
-                    cssVar('--graph-selected-stroke') : cssVar('--graph-node-stroke'));
-
-            node.select('text')
-                .attr('fill', cssVar('--graph-node-text'));
-
-            if (currentHighlight) {
-                currentHighlight.attr('fill', cssVar('--graph-current-arrow'));
-            }
-
-            visitedHighlightsGroup.selectAll('rect')
-                .attr('fill', cssVar('--graph-current-arrow'))
-                .attr('stroke', 'none');
-
+            // Legacy support or if theme changes dynamically and vars don't propagate (shouldn't happen with CSS vars in :root)
+            // Legend updates
             legend.select('rect').attr('fill', cssVar('--graph-legend-bg'));
             legend.selectAll('text').attr('fill', cssVar('--graph-legend-text'));
 
