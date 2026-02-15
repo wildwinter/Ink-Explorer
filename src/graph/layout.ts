@@ -254,7 +254,7 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
 
     // Layout parameters
     const depthSpacing = 300; // Horizontal spacing between knot levels (left-to-right)
-    const knotVerticalSpacing = 200; // Vertical spacing when spreading multiple children
+    const knotVerticalSpacing = 400; // Vertical spacing when spreading multiple children
     const stitchVerticalOffset = 100; // Offset for stitches below their knot
     const stitchHorizontalSpacing = 150; // Horizontal spacing for stitches
 
@@ -611,7 +611,7 @@ export function computeHierarchicalPositions(graph: Graph, knotGroups: Map<strin
 
                         // Collision check (AABB)
                         // Add some padding/margin for spacing (20px)
-                        const MARGIN = 20;
+                        const MARGIN = 100;
                         const overlapsX = (myMinX < otherMaxX + MARGIN) && (myMaxX > otherMinX - MARGIN);
                         const overlapsY = (myMinY < otherMaxY + MARGIN) && (myMaxY > otherMinY - MARGIN);
 

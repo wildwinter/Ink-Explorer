@@ -245,7 +245,6 @@ export function createGraphVisualization(
     let simulation: d3.Simulation<d3.SimulationNodeDatum, undefined>;
     let link: d3.Selection<SVGLineElement, any, SVGGElement, unknown>;
     let node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>;
-    let renderPositions: () => void;
     let selectedNodeId: string | null = null;
 
     // Minimap (created after zoom is set up)
@@ -291,6 +290,164 @@ export function createGraphVisualization(
 
     svg.on('mousedown.contextmenu', hideContextMenu);
 
+    const VIEWPORT_PADDING = 100; // Pixels around viewport to render
+    let currentTransform = d3.zoomIdentity;
+
+    function renderVisibleElements() {
+        if (!container) return;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        // Calculate visible bounds in graph coordinates
+        // t.x/t.y are screen coordinates of the origin (0,0)
+        // To get graph coordinate of screen (0,0): -t.x / t.k
+        const minX = -currentTransform.x / currentTransform.k - VIEWPORT_PADDING;
+        const maxX = (width - currentTransform.x) / currentTransform.k + VIEWPORT_PADDING;
+        const minY = -currentTransform.y / currentTransform.k - VIEWPORT_PADDING;
+        const maxY = (height - currentTransform.y) / currentTransform.k + VIEWPORT_PADDING;
+
+        const visibleNodes = graph.nodes.filter(n =>
+            n.x !== undefined && n.y !== undefined &&
+            n.x >= minX && n.x <= maxX &&
+            n.y >= minY && n.y <= maxY
+        );
+
+        const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+
+        const visibleLinks = graph.links.filter(l => {
+            const s = typeof l.source === 'object' ? l.source : graph.nodes.find(n => n.id === l.source);
+            const t = typeof l.target === 'object' ? l.target : graph.nodes.find(n => n.id === l.target);
+            if (!s || !t) return false;
+            // Render link if either end is visible, or if they span across the viewport (simplified to either or both ends visible)
+            // Ideally we'd check line intersection with viewport, but "either visible" is a good enough proxy for connected components.
+            return visibleNodeIds.has((s as GraphNode).id) || visibleNodeIds.has((t as GraphNode).id);
+        });
+
+        // 1. Links Join
+        link = linksLayer
+            .selectAll<SVGLineElement, any>('line')
+            .data(visibleLinks, (d: any) => {
+                const sourceId = typeof d.source === 'string' ? d.source : (d.source as any).id;
+                const targetId = typeof d.target === 'string' ? d.target : (d.target as any).id;
+                return `${sourceId}-${targetId}`;
+            });
+
+        link.exit().remove();
+
+        const linkEnter = link.enter()
+            .append('line')
+            .attr('class', 'graph-link')
+            .attr('marker-end', 'url(#arrow)');
+
+        link = linkEnter.merge(link);
+
+        // Update Link Positions
+        link.each(function (d: any) {
+            const endpoints = computeLinkEndpoints(d, graph.nodes);
+            const el = d3.select(this);
+            el.attr('x1', endpoints.x1)
+                .attr('y1', endpoints.y1)
+                .attr('x2', endpoints.x2)
+                .attr('y2', endpoints.y2);
+        });
+
+        // 2. Nodes Join
+        node = nodesLayer
+            .selectAll<SVGGElement, GraphNode>('g')
+            .data(visibleNodes, (d: GraphNode) => d.id);
+
+        node.exit().remove();
+
+        const nodeEnter = node.enter().append('g')
+            .attr('class', d => getNodeClass(d.type))
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                selectNode(d.id);
+            });
+
+        nodeEnter.append('rect')
+            .attr('class', 'node-rect')
+            .attr('width', 100)
+            .attr('height', 50)
+            .attr('x', -50)
+            .attr('y', -25)
+            .attr('rx', 8)
+            .attr('ry', 8);
+
+        nodeEnter.append('text')
+            .attr('class', 'node-label')
+            .attr('x', 0)
+            .attr('y', 5)
+            .attr('text-anchor', 'middle')
+            .style('pointer-events', 'none')
+            .style('user-select', 'none')
+            .each(function (d) {
+                wrapLabel(this, d.label, 90);
+            });
+
+        nodeEnter.append('title')
+            .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
+
+        if (onNodeTest) {
+            nodeEnter.on('contextmenu', (event: MouseEvent, d: GraphNode) => {
+                event.preventDefault();
+                event.stopPropagation();
+                showContextMenu(event.clientX, event.clientY, d);
+            });
+        }
+
+        node = nodeEnter.merge(node);
+
+        // Update Node Positions & Selection State
+        node.attr('transform', (d: any) => `translate(${d.x},${d.y})`)
+            .classed('selected', d => d.id === selectedNodeId);
+
+
+        // 3. Update Highlights (Current & Visited)
+        if (currentHighlightedNodeId && visibleNodeIds.has(currentHighlightedNodeId)) {
+            const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
+            if (hn) {
+                currentHighlight
+                    .attr('transform', `translate(${hn.x || 0},${hn.y || 0})`)
+                    .style('display', null);
+            }
+        } else {
+            currentHighlight.style('display', 'none');
+        }
+
+        // Visited Highlights
+        const visibleVisited = [];
+        if (visitedNodeMap.size > 0) {
+            for (const n of visibleNodes) {
+                if (visitedNodeMap.has(n.id)) {
+                    visibleVisited.push({ id: n.id, opacity: visitedNodeMap.get(n.id)! });
+                }
+            }
+        }
+
+        const visitedSelection = visitedHighlightsGroup
+            .selectAll<SVGRectElement, { id: string; opacity: number }>('rect')
+            .data(visibleVisited, d => d.id);
+
+        visitedSelection.exit().remove();
+
+        visitedSelection.enter()
+            .append('rect')
+            .attr('width', 116)
+            .attr('height', 66)
+            .attr('x', -58)
+            .attr('y', -33)
+            .attr('rx', 12)
+            .attr('ry', 12)
+            .attr('class', 'visited-highlight-rect')
+            .merge(visitedSelection)
+            .attr('opacity', d => d.opacity)
+            .attr('transform', d => {
+                const n = graph.nodes.find(n => n.id === d.id);
+                return n ? `translate(${n.x || 0},${n.y || 0})` : '';
+            });
+    }
+
     function updateVisualization() {
         const knotGroups = new Map<string, GraphNode[]>();
 
@@ -327,9 +484,14 @@ export function createGraphVisualization(
             if (options?.initialTransform) {
                 const t = options.initialTransform;
                 const transform = d3.zoomIdentity.translate(t.x, t.y).scale(t.k);
+                // The zoom event listener will trigger renderVisibleElements via the 'zoom' event
+                // But we generally want to call it immediately too if zoom doesn't emit immediately?
+                // Actually d3 zoom emit events synchronously on call.
                 svg.call(zoom.transform as any, transform);
             } else {
-                zoomToFit();
+                // Determine initial fit, then apply it
+                // We'll calculate the fit transform ourselves and apply it
+                // zoomToFit will eventually call svg.call(zoom.transform...), which triggers render
             }
         }
 
@@ -344,8 +506,6 @@ export function createGraphVisualization(
             <div class="graph-loader"></div>
             <div class="graph-loading-text">Arranging knots...</div>
         `;
-        // container is checked for null at start of function, but TS might need reassurance or it's inside a callback?
-        // Actually this is main scope.
         if (container) {
             container.appendChild(loadingOverlay);
         }
@@ -355,32 +515,6 @@ export function createGraphVisualization(
 
         // Defer heavy work to allow browser to render loader
         setTimeout(() => {
-            renderPositions = () => {
-                link.each(function (d: any) {
-                    const endpoints = computeLinkEndpoints(d, graph.nodes);
-                    const el = d3.select(this);
-                    el.attr('x1', endpoints.x1)
-                        .attr('y1', endpoints.y1)
-                        .attr('x2', endpoints.x2)
-                        .attr('y2', endpoints.y2);
-                });
-
-                node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
-
-                if (currentHighlightedNodeId) {
-                    const hn = graph.nodes.find(n => n.id === currentHighlightedNodeId);
-                    if (hn) {
-                        currentHighlight.attr('transform', `translate(${hn.x || 0},${hn.y || 0})`);
-                    }
-                }
-
-                visitedHighlightsGroup.selectAll<SVGRectElement, { id: string }>('rect')
-                    .attr('transform', d => {
-                        const n = graph.nodes.find(n => n.id === d.id);
-                        return n ? `translate(${n.x || 0},${n.y || 0})` : '';
-                    });
-            };
-
             graph.nodes.forEach(n => {
                 (n as any).targetX = n.x;
                 (n as any).targetY = n.y;
@@ -389,88 +523,71 @@ export function createGraphVisualization(
             simulation = d3.forceSimulation(graph.nodes as any)
                 .force('link', d3.forceLink(graph.links as any)
                     .id((d: any) => d.id)
-                    .distance(150)
-                    .strength(0.01))
+                    .distance((d: any) => {
+                        // Adaptive distance:
+                        // Internal links (same knot) -> Short
+                        // External links (different knots) -> Long
+                        const source = d.source as any;
+                        const target = d.target as any;
+                        const sourceKnot = source.type === 'knot' ? source.id : source.knotName;
+                        const targetKnot = target.type === 'knot' ? target.id : target.knotName;
+
+                        if (sourceKnot && targetKnot && sourceKnot === targetKnot) {
+                            return 50; // Internal spacing
+                        }
+                        return 300; // External spacing
+                    })
+                    .strength((d: any) => {
+                        // Adaptive strength:
+                        // Internal links -> Strong (keep island together)
+                        // External links -> Weak (allow islands to drift)
+                        const source = d.source as any;
+                        const target = d.target as any;
+                        const sourceKnot = source.type === 'knot' ? source.id : source.knotName;
+                        const targetKnot = target.type === 'knot' ? target.id : target.knotName;
+
+                        if (sourceKnot && targetKnot && sourceKnot === targetKnot) {
+                            return 0.5;
+                        }
+                        return 0.05;
+                    }))
+                .force('charge', d3.forceManyBody().strength(-300)) // Repulsion to separate islands
                 .force('collision', d3.forceCollide<any>()
-                    .radius(40)
-                    .strength(0.2)
-                    .iterations(1)) // Reduced iterations for performance
-                .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.8))
-                .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.8))
+                    .radius(60)
+                    .strength(0.7)
+                    .iterations(3))
+                .force('x', d3.forceX((d: any) => (d as any).targetX).strength(0.05))
+                .force('y', d3.forceY((d: any) => (d as any).targetY).strength(0.05))
+                .force('group', (alpha) => {
+                    // Custom force to pull stitches towards their knot
+                    const strength = 0.5 * alpha;
+                    graph.nodes.forEach((d: any) => {
+                        if (d.type === 'stitch' && d.knotName) {
+                            const knot = graph.nodes.find(n => n.id === d.knotName);
+                            if (knot) {
+                                const kx = (knot as any).x || 0;
+                                const ky = (knot as any).y || 0;
+                                d.vx += (kx - d.x) * strength;
+                                d.vy += (ky - d.y) * strength;
+                            }
+                        }
+                    });
+                })
                 .stop(); // Stop immediately, don't auto-start
 
-            link = linksLayer
-                .selectAll<SVGLineElement, any>('line')
-                .data(graph.links, (d: any) => {
-                    const sourceId = typeof d.source === 'string' ? d.source : (d.source as any).id;
-                    const targetId = typeof d.target === 'string' ? d.target : (d.target as any).id;
-                    return `${sourceId}-${targetId}`;
-                })
-                .join('line')
-                .attr('class', 'graph-link') // Use CSS class
-                .attr('marker-end', 'url(#arrow)');
-
-            node = nodesLayer
-                .selectAll<SVGGElement, GraphNode>('g')
-                .data(graph.nodes, (d: GraphNode) => d.id)
-                .join(
-                    enter => {
-                        const nodeEnter = enter.append('g')
-                            .attr('class', d => getNodeClass(d.type)) // Use CSS classes
-                            .on('click', (event, d) => {
-                                event.stopPropagation();
-                                selectNode(d.id);
-                            });
-
-                        nodeEnter.append('rect')
-                            .attr('class', 'node-rect')
-                            .attr('width', 100)
-                            .attr('height', 50)
-                            .attr('x', -50)
-                            .attr('y', -25)
-                            .attr('rx', 8)
-                            .attr('ry', 8);
-                        // fill and stroke now handled by CSS
-
-                        nodeEnter.append('text')
-                            .attr('class', 'node-label')
-                            .attr('x', 0)
-                            .attr('y', 5)
-                            .attr('text-anchor', 'middle')
-                            .attr('font-size', '12px')
-                            // fill and weight now handled by CSS
-                            .style('pointer-events', 'none')
-                            .style('user-select', 'none')
-                            .each(function (d) {
-                                wrapLabel(this, d.label, 90);
-                            });
-
-                        nodeEnter.append('title')
-                            .text(d => d.type === 'root' ? 'Root' : d.type === 'knot' ? `Knot: ${d.id}` : `Stitch: ${d.id}`);
-
-                        if (onNodeTest) {
-                            nodeEnter.on('contextmenu', (event: MouseEvent, d: GraphNode) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                showContextMenu(event.clientX, event.clientY, d);
-                            });
-                        }
-
-                        return nodeEnter;
-                    },
-                    update => update,
-                    exit => exit.remove()
-                );
-
             // PRE-WARM: Run simulation synchronously
-            // This avoids the visual "wiggle" and saves CPU on the main thread after load
-            const NUM_TICKS = 150;
+            const NUM_TICKS = 300; // Increased ticks to allow settling with weaker forces
             for (let i = 0; i < NUM_TICKS; ++i) {
                 simulation.tick();
             }
 
-            // Render once after pre-warming
-            renderPositions();
+            // Ensure we are fit if no initial transform
+            if (needsLayout && !options?.initialTransform) {
+                zoomToFit();
+            } else {
+                renderVisibleElements();
+            }
+
             minimap?.updatePositions();
 
             // Fade out loading overlay
@@ -485,14 +602,13 @@ export function createGraphVisualization(
 
     }
 
-    // Drag handling removed as per user request
-
-
     // Zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 4])
         .on('zoom', (event) => {
+            currentTransform = event.transform; // Capture transform for virtualization
             g.attr('transform', event.transform);
+            renderVisibleElements(); // Render only visible elements
             minimap?.updateViewport();
             if (options?.onTransformChange) {
                 const t = event.transform;
@@ -563,13 +679,10 @@ export function createGraphVisualization(
         .attr('rx', 5);
 
     legend.append('rect')
-        .attr('class', 'node-knot') // Use class to pick up fill
+        .attr('class', 'node-knot')
         .attr('x', -8).attr('y', -8).attr('width', 35).attr('height', 16)
         .attr('rx', 4).attr('ry', 4)
-        .attr('fill', cssVar('--graph-knot-fill')) // Keep explicit fill for legend if needed or rely on class?
-        // Legend rects don't have the same structure as graph nodes (.node-rect nested), so classes might not map 1:1 perfectly without adjustment.
-        // Let's keep explicit attributes for legend for safety, or wrap them.
-        // For simplicity in this tool call, I will leave legend as is but update updateColors to be minimal.
+        .attr('fill', cssVar('--graph-knot-fill'))
         .attr('stroke', cssVar('--graph-node-stroke')).attr('stroke-width', 1);
     legend.append('text')
         .attr('x', 35).attr('y', 5)
@@ -654,61 +767,18 @@ export function createGraphVisualization(
             svg.transition().duration(300).call(zoom.transform as any, transform);
         },
         highlightCurrentNode(nodeId: string | null, visited?: Map<string, number>): void {
-            if (!nodeId) {
-                currentHighlightedNodeId = null;
-                currentHighlight.style('display', 'none');
-            } else {
-                const targetNode = graph.nodes.find(n => n.id === nodeId);
-                if (targetNode) {
-                    currentHighlightedNodeId = nodeId;
-                    currentHighlight
-                        .attr('transform', `translate(${targetNode.x || 0},${targetNode.y || 0})`)
-                        .attr('fill', cssVar('--graph-current-arrow'))
-                        .style('display', null);
-                }
-            }
-
+            currentHighlightedNodeId = nodeId;
             visitedNodeMap = visited || new Map();
 
-            const visitedArray: Array<{ id: string; opacity: number }> = [];
-            visitedNodeMap.forEach((opacity, id) => {
-                visitedArray.push({ id, opacity });
-            });
-
-            const visitedSelection = visitedHighlightsGroup
-                .selectAll<SVGRectElement, { id: string; opacity: number }>('rect')
-                .data(visitedArray, d => d.id);
-
-            visitedSelection.exit().remove();
-
-            visitedSelection.enter()
-                .append('rect')
-                .attr('width', 116)
-                .attr('height', 66)
-                .attr('x', -58)
-                .attr('y', -33)
-                .attr('rx', 12)
-                .attr('ry', 12)
-                .attr('class', 'visited-highlight-rect') // Use class
-                .merge(visitedSelection)
-                .attr('opacity', d => d.opacity)
-                .attr('transform', d => {
-                    const n = graph.nodes.find(n => n.id === d.id);
-                    return n ? `translate(${n.x || 0},${n.y || 0})` : '';
-                });
+            // Re-render visible elements to apply highlighting/visited classes
+            renderVisibleElements();
 
             minimap.updateColors(cssVar, getNodeFill, currentHighlightedNodeId, visitedNodeMap);
         },
         updateColors() {
-            // Simplified updateColors - most things handled by CSS vars now!
-            // We just need to update elements that might explicitly rely on JS-read vars if any.
-            // But with the new CSS classes, they bind directly to vars.
-            // The markers might need update if they are outside the shadow dom/scope? No, they are in defs.
-
             svg.select('defs marker path')
                 .attr('fill', cssVar('--graph-link-stroke'));
 
-            // Legacy support or if theme changes dynamically and vars don't propagate (shouldn't happen with CSS vars in :root)
             // Legend updates
             legend.select('rect').attr('fill', cssVar('--graph-legend-bg'));
             legend.selectAll('text').attr('fill', cssVar('--graph-legend-text'));
