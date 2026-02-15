@@ -1,9 +1,9 @@
 TODO:
 -----
+Double check shuffles and cycles saving is working properly. 
 Add stress testing.
+See what explodes with Cobbet-style content size. 
 Componentise for use in Dinky.
-
-Proper icons.
 
 DONE:
 -----
