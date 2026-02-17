@@ -71,8 +71,7 @@ This is useful to take snapshots of a state to easily restore it, for testing.
 
 ## Releases
 
-You can find releases for various platforms [here](https://github.com/wildwinter/Ink-Explorer/releases
-).
+You can find releases for various platforms [on the releases page](https://github.com/wildwinter/Ink-Explorer/releases).
 
 ## Usage
 
