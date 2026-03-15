@@ -1,7 +1,6 @@
 TODO:
 -----
 Add find node.
-See what explodes with Cobbet-style content size. 
 
 Add stress testing.
 Componentise for use in Dinky.
@@ -46,3 +45,5 @@ Test external functions
 Fix issue with shuffle code view (going into a container)
 Proper documentation.
 Double check shuffles and cycles saving is working properly. 
+See what explodes with Cobbet-style content size. 
+Add missing About menu for Windows

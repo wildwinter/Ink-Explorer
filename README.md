@@ -80,6 +80,28 @@ You can find releases for various platforms [on the releases page](https://githu
 3. **Play**: Use the **Live Ink** tab to play through the story.
 4. **Debug**: Use the **Variables** and **Visits** tabs to monitor state.
 
+## Security Issues
+
+### Note on Windows Security
+
+Because this is a hobbyist project, this app is **currently not digitally signed*** for Windows. When you run the installer, Windows may show a blue "Windows protected your PC" box.
+
+To install anyway:
+
+1. Click "**More info**" on the blue popup.
+
+2. Click "**Run anyway**".
+
+Alternatively, you can right-click the .exe, select Properties, check the Unblock box at the bottom, and click OK.
+
+For more details on why Windows shows this, see the [Official Microsoft SmartScreen Documentation](https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/).
+
+\* *Because it costs a lot and seems to be impossible outside North America right now for individual developers. Thanks Microsoft!*
+
+### Note on Mac Security
+
+The app is signed. Because it's easier on Mac.
+
 ## Acknowledgements
 
 Huge thanks to [Inkle](https://www.inklestudios.com/) for creating Ink, and to [Yannick Lohse](https://github.com/y-lohse) for `inkjs`.

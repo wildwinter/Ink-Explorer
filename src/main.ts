@@ -390,7 +390,16 @@ function createMenu(): void {
           { role: 'close' as const }
         ])
       ]
-    }
+    },
+    ...(isMac ? [] : [{
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About Ink Explorer',
+          click: () => app.showAboutPanel()
+        }
+      ]
+    }])
   ];
 
   const menu = Menu.buildFromTemplate(template);
